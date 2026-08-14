@@ -19,9 +19,14 @@ Group=polign
 # too much IO for a small box. 24 keeps recall high at a fraction of the cost;
 # raise it if results feel thin, lower it if latency climbs.
 #
-# -dir holds only the embedding model (~30 MB) and corpus.json. The passages
+# -dir holds only the embedding model (~129 MB) and corpus.json. The passages
 # live in S3, reached through the node.
-Environment=GOMEMLIMIT=256MiB
+#
+# The limit has to clear the resident matrix (63,091 tokens x 512 dims x 4 B =
+# 129 MB) plus the vocabulary map and per-request garbage. 400 MiB is
+# comfortable; 256 MiB is not, and the two services together must still fit the
+# box (see polign-node.service).
+Environment=GOMEMLIMIT=400MiB
 ExecStart=/opt/polign/bin/polign-demo \
     -public \
     -http 127.0.0.1:23100 \

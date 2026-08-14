@@ -43,7 +43,17 @@ import sys
 import urllib.error
 import urllib.request
 
-MODEL_REPO = "minishlab/potion-base-8M"
+# potion-retrieval-32M is model2vec distilled for retrieval, which is what this
+# corpus is for. The general-purpose potion-base-8M ranks "Blue" above "Diffuse
+# sky radiation" for "why is the sky blue" by 0.001 — a margin that disappears
+# among millions of distractors. The retrieval model puts the right passage
+# first. It costs 512 dimensions instead of 256 (so ~2x the vector bytes, in
+# storage and in what a cold query fetches) and a 129 MB embedding matrix
+# instead of 30 MB.
+#
+# Any model2vec static model works here as long as it is WordPiece +
+# BertNormalizer; export_model asserts exactly that.
+MODEL_REPO = "minishlab/potion-retrieval-32M"
 MODEL_BASE = f"https://huggingface.co/{MODEL_REPO}/resolve/main"
 
 DATASET = "wikimedia/wikipedia 20231101.en"
@@ -105,11 +115,26 @@ def fetch(url: str, dest: str) -> None:
     os.rename(tmp, dest)
 
 
+def model_work_dir(work: str) -> str:
+    """Scratch path for the current model's downloads.
+
+    Namespaced by repo: every model ships files with the same names, so a flat
+    cache would silently hand back the previous model's weights after
+    MODEL_REPO changes — and produce a corpus embedded with one model and
+    queried with another.
+    """
+    d = os.path.join(work, "models", MODEL_REPO.replace("/", "_"))
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
 def export_model(work: str, out: str) -> int:
     """Write vocab.txt, embeddings.f32, and model.json. Returns the dimension."""
-    fetch(f"{MODEL_BASE}/tokenizer.json", os.path.join(work, "tokenizer.json"))
-    fetch(f"{MODEL_BASE}/model.safetensors", os.path.join(work, "model.safetensors"))
-    fetch(f"{MODEL_BASE}/config.json", os.path.join(work, "config.json"))
+    mwork = model_work_dir(work)
+    fetch(f"{MODEL_BASE}/tokenizer.json", os.path.join(mwork, "tokenizer.json"))
+    fetch(f"{MODEL_BASE}/model.safetensors", os.path.join(mwork, "model.safetensors"))
+    fetch(f"{MODEL_BASE}/config.json", os.path.join(mwork, "config.json"))
+    work = mwork
 
     with open(os.path.join(work, "tokenizer.json")) as f:
         tok = json.load(f)
@@ -152,6 +177,8 @@ def export_model(work: str, out: str) -> int:
         "source": MODEL_REPO,
         "dim": dim,
         "vocab_size": rows,
+        # Recorded so a dataset directory can be checked against the model that
+        # actually produced it.
         "unk_token": model["unk_token"],
         "max_input_chars_per_word": model.get("max_input_chars_per_word", 100),
         "normalize": bool(cfg.get("normalize", True)),
@@ -206,6 +233,76 @@ def build_shard(src: str, dest: str, target: int) -> tuple[int, int]:
     return passages, articles
 
 
+GOLDEN_TEXTS = [
+    "The quick brown fox jumps over the lazy dog.",
+    "Beyoncé wrote her résumé in a naïve café",
+    "don't stop-me, now!!",
+    "In 1969, Apollo 11 landed on the Moon.",
+    "zzzzqqqq glorbulax vecs",
+    "北京是中国的首都",
+    "a",
+    "supercalifragilistic" + "x" * 120,
+    "I ❤ vector databases",
+    "  whitespace\tand\nnewlines  ",
+    "Which volcano erupted in Iceland?",
+    "history of the telephone and its inventor",
+]
+
+
+def build_goldens(work: str, out: str, repo_out: str) -> None:
+    """Encode GOLDEN_TEXTS with the reference model2vec implementation.
+
+    internal/embedder is a Go reimplementation of model2vec inference; these
+    reference encodings are what pin it to the Python original. Regenerate them
+    whenever MODEL_REPO changes — a golden file from a different model tests
+    nothing about the model actually being shipped.
+
+    Alongside the reference vectors the file carries the embedding rows those
+    tokens use, so the Go test can check the pooling math without the full
+    matrix. vocab.txt is committed next to it, because greedy longest-match
+    tokenization is only faithful against the complete vocabulary.
+
+    Needs the model2vec package: pip install model2vec
+    """
+    import struct as _struct
+
+    from model2vec import StaticModel
+
+    # from_pretrained wants the HF repo layout, which lives in work/ only if
+    # the files were fetched there; fall back to the hub.
+    model = StaticModel.from_pretrained(MODEL_REPO)
+    vectors = model.encode(GOLDEN_TEXTS)
+    token_ids = [
+        e.ids for e in model.tokenizer.encode_batch_fast(GOLDEN_TEXTS, add_special_tokens=False)
+    ]
+
+    with open(os.path.join(out, "model.json")) as f:
+        dim = json.load(f)["dim"]
+    with open(os.path.join(out, "embeddings.f32"), "rb") as f:
+        emb = f.read()
+    used = sorted({i for ids in token_ids for i in ids})
+    token_vectors = {
+        str(i): list(_struct.unpack(f"<{dim}f", emb[i * dim * 4 : (i + 1) * dim * 4]))
+        for i in used
+    }
+
+    golden = {
+        "source": MODEL_REPO,
+        "texts": GOLDEN_TEXTS,
+        "token_ids": token_ids,
+        "vectors": [[float(x) for x in v] for v in vectors],
+        "token_vectors": token_vectors,
+    }
+    os.makedirs(repo_out, exist_ok=True)
+    with open(os.path.join(repo_out, "golden.json"), "w") as f:
+        json.dump(golden, f)
+    # The Go test tokenizes against the full vocabulary, so ship it too.
+    with open(os.path.join(out, "vocab.txt")) as src, \
+            open(os.path.join(repo_out, "vocab.txt"), "w") as dst:
+        dst.write(src.read())
+    log(f"  goldens: {len(GOLDEN_TEXTS)} reference encodings, {len(used)} token rows")
+
+
 def load_shard_stats(out: str) -> dict:
     """Read per-shard counts from an existing manifest, if any."""
     try:
@@ -244,6 +341,9 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=0,
                     help="stop after roughly this many passages (0 = no limit)")
     ap.add_argument("--model-only", action="store_true", help="export the model files and stop")
+    ap.add_argument("--goldens", default=None, metavar="DIR",
+                    help="also write golden.json + vocab.txt for the Go embedder tests "
+                         "(e.g. internal/embedder/testdata); needs the model2vec package")
     args = ap.parse_args()
 
     if not 1 <= args.files <= DUMP_FILES:
@@ -255,6 +355,9 @@ def main() -> None:
 
     log("==> model")
     dim = export_model(work, args.out)
+    if args.goldens:
+        log("==> golden encodings")
+        build_goldens(work, args.out, args.goldens)
     if args.model_only:
         log("--model-only: done")
         return

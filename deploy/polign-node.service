@@ -26,7 +26,10 @@ Group=polign
 #
 # What is left is the cold read path: manifest + centroids resident, cells
 # fetched from S3 per query and cached on local disk.
-Environment=GOMEMLIMIT=1400MiB
+# The node's live set is tiny (manifest + centroids); this bounds the garbage a
+# burst of cold queries generates, each of which fetches nprobe cells. Sized so
+# node + demo app (400 MiB) still leave the 2 GB box room to breathe.
+Environment=GOMEMLIMIT=1000MiB
 Environment=AWS_REGION=us-east-1
 ExecStart=/opt/polign/bin/polign-server \
     -store s3://REPLACE_BUCKET/polign \

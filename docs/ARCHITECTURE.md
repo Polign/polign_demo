@@ -92,17 +92,49 @@ the node on its default metric and converts for display
 (`polign.Cosine`). This is not a compromise — IVF-PQ encodes residuals for L2,
 which is the more accurate of the two paths.
 
-## The embedder
+## The embedder, and why it is the retrieval model
 
 model2vec static embeddings: a token-embedding matrix, mean-pooled over
 WordPiece tokens and L2-normalized. No inference runtime, no GPU, no API key —
-30 MB of weights and some arithmetic. `internal/embedder` is a Go port pinned
-to the Python reference by golden tests at ~1e-8, including the load-bearing
-detail that `[UNK]` tokens are dropped from the mean rather than contributing
-their (non-zero, norm ~16) row.
+just weights and arithmetic. `internal/embedder` is a Go port pinned to the
+Python reference by golden tests at ~1e-8, including the load-bearing detail
+that `[UNK]` tokens are dropped from the mean rather than contributing their
+(non-zero, norm ~16) row.
+
+The demo first ran on `potion-base-8M` (256-dim, general purpose) and the
+results were the reason for the switch. Scaling the corpus from 100k to 12.5M
+fixed *coverage* — hybrid search started finding Apollo 11 — but semantic
+search still answered "why is the sky blue" with **Conair Group**. Ranking real
+corpus passages with each model shows why:
+
+| rank | potion-base-8M | potion-retrieval-32M |
+|---|---|---|
+| 1 | Blue (+0.345) | **Diffuse sky radiation** (+0.372) |
+| 2 | Diffuse sky radiation (+0.344) | Blue (+0.343) |
+
+The general model had the right answer *second, by 0.001* — a margin that
+survives a 5-document test and vanishes among 12.5M distractors. The
+retrieval-distilled model puts it first.
+
+The cost is dimensionality: 512 instead of 256, so every vector is twice the
+bytes in storage and twice the bytes a cold query fetches, and the weight
+matrix is 129 MB instead of 30 MB. That is the trade this demo makes — a
+corpus this large is not worth much if the top result is wrong.
+
+Any model2vec static model works as a drop-in: `prepare.py` asserts the
+tokenizer is WordPiece + BertNormalizer and writes the dimension into
+`model.json`, and the Go embedder reads it. Changing `MODEL_REPO` requires
+rebuilding the corpus, because vectors from two models cannot be compared.
 
 The same code embeds the corpus in `cmd/load` and the queries in `cmd/demo`, so
 the two cannot drift apart.
+
+**One trap worth knowing:** model files all ship under the same names
+(`model.safetensors`, `tokenizer.json`), so a flat download cache silently
+serves the previous model's weights after `MODEL_REPO` changes. `prepare.py`
+namespaces its cache per repo. The first switch here exported a matrix labelled
+`potion-retrieval-32M` that was actually the 8M weights; the golden test caught
+it, because the reference vectors were 512-dim and the exported matrix was 256.
 
 ## Failure modes worth knowing
 

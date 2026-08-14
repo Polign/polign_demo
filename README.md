@@ -34,7 +34,7 @@ manifest and a centroid table rather than a corpus.
 |---|---|
 | `prepare/prepare.py` | streams the `wikimedia/wikipedia 20231101.en` dump into passage shards and exports the static embedding model |
 | `cmd/load` | embeds passages and upserts them into a running node; resumable, ~4,700/s |
-| `cmd/demo` | the public UI and `/demo/search`; stateless apart from a 30 MB embedding model |
+| `cmd/demo` | the public UI and `/demo/search`; stateless apart from a 129 MB embedding model |
 | `internal/embedder` | model2vec inference in pure Go, pinned to the reference implementation by golden tests |
 | `internal/polign` | a small client for the node's HTTP `/v1` API — standard library only |
 | `deploy/` | systemd units, Caddyfile, and the runbook |
@@ -67,11 +67,16 @@ that shows where each result ranked in the single-leg searches.
 ## The three things that make it small
 
 **Nothing is embedded at query time by a model server.** The embedder is
-model2vec — a static token-embedding matrix, mean-pooled and L2-normalized.
-30 MB of weights, pure Go, no inference runtime and no API key. The same code
-embeds the corpus and the queries, so the two can never disagree on
-tokenization; `internal/embedder` is pinned to the Python reference by golden
-tests at ~1e-8.
+model2vec (`potion-retrieval-32M`) — a static token-embedding matrix,
+mean-pooled and L2-normalized. Pure Go, no inference runtime, no GPU, no API
+key. The same code embeds the corpus and the queries, so the two can never
+disagree on tokenization; `internal/embedder` is pinned to the Python reference
+by golden tests at ~1e-8.
+
+The *retrieval*-distilled model matters more than it sounds: on the general
+`potion-base-8M`, "why is the sky blue" ranked "Diffuse sky radiation" second
+behind an article literally named "Blue", by 0.001 — and among 12.5M passages
+that margin turns into a wrong answer. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 **The serving node never restores the corpus.** Left alone, `-store` expands
 into a full read-write deployment that rebuilds the index in RAM at boot.
@@ -107,4 +112,4 @@ and polign_db supports it with different flags, not different code.
 Text: [English Wikipedia](https://en.wikipedia.org) via the
 [wikimedia/wikipedia](https://huggingface.co/datasets/wikimedia/wikipedia)
 `20231101.en` dump, CC BY-SA 4.0. Embeddings:
-[potion-base-8M](https://huggingface.co/minishlab/potion-base-8M), MIT.
+[potion-retrieval-32M](https://huggingface.co/minishlab/potion-retrieval-32M), MIT.
