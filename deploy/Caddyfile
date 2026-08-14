@@ -9,10 +9,9 @@ demo.polign.com {
 	encode zstd gzip
 
 	# The app reads the leftmost X-Forwarded-For hop for its per-client rate
-	# limit, so the real client IP has to arrive here.
-	reverse_proxy 127.0.0.1:23100 {
-		header_up X-Forwarded-For {remote_host}
-	}
+	# limit. Caddy appends the client IP to that header by default, so no
+	# header_up directive is needed (adding one makes Caddy warn).
+	reverse_proxy 127.0.0.1:23100
 
 	header {
 		# The demo serves its own inline CSS/JS and links out to Wikipedia.

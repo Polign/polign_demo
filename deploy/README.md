@@ -14,7 +14,26 @@ the dataset files, and the build host is terminated when it is done.
 
 ## Measurements
 
-From a 60,000-passage slice of `20231101.en` on an M-series Mac, `fs:` store:
+Production, `t4g.small` serving node against S3, 12.5M-passage corpus,
+`nprobe=24`:
+
+| | |
+|---|---|
+| node RSS, idle | **28 MiB** |
+| node RSS, after queries | ~420 MiB (bounded by `GOMEMLIMIT=1400MiB`) |
+| first query for a topic (cold from S3) | ~950 ms |
+| repeat query (local disk cache) | 40–65 ms |
+| corpus prepare (41 parquet files) | ~50 min on `c7g.2xlarge` |
+| load rate into S3-backed node | ~1,000 passages/s |
+
+The gap between 950 ms and 45 ms is the whole cold-storage story: the first
+query for a region of the corpus pays an S3 round trip for each cell it probes,
+and everything after that is served from the local disk cache. Prewarming the
+example queries after a deploy (see below) means the demo's front page is warm
+before anyone touches it.
+
+From a 60,000-passage slice on an M-series Mac, `fs:` store — useful because it
+isolates the engine from S3 latency:
 
 | | |
 |---|---|
@@ -60,15 +79,25 @@ mkdir -p data work
 sudo docker run --rm -v "$PWD/data:/out" -v "$PWD/work:/work" -v "$PWD/prepare:/prep" \
     python:3.12-slim sh -c 'pip install -q pyarrow && python /prep/prepare.py --out /out --work /work'
 
-# A full read-write node against the bucket: write log, persistence, the lot.
-polign-server -store "s3://$BUCKET/polign" -maintain 0 &
-
-go run ./cmd/load -dir ./data -addr http://127.0.0.1:23000    # ~21 min
+# Load one shard at a time, restarting the node between shards. Do not
+# substitute a single long `cmd/load` run at this scale: a node applies every
+# write to its in-memory index as well as its write log, so one process would
+# need ~25 GB of RAM, and HNSW insertion decays from ~1,700/s into an empty
+# index to ~400/s once it holds a million vectors. The driver's restarts keep
+# it at the fast end — see the comment at the top of the script.
+STORE="s3://$BUCKET/polign" ./deploy/load-chunked.sh    # ~2.5 h for 12.5M
 
 # Publish the IVF-PQ collection generation and its CodesOnly structure
 # generation. This is the expensive, RAM-hungry step the serving host must
 # never run.
 polign-maintain -store "s3://$BUCKET/polign"
+```
+
+For a small slice (a smoke test, not the real corpus) a single run is fine:
+
+```sh
+polign-server -store "s3://$BUCKET/polign" -maintain 0 &
+go run ./cmd/load -dir ./data -addr http://127.0.0.1:23000
 ```
 
 Then **terminate the instance**. Everything durable is in S3.
@@ -119,7 +148,24 @@ or Caddy's HTTP-01 challenge fails.
 curl -s localhost:23100/healthz
 curl -s "localhost:23100/demo/search?q=why+do+volcanoes+erupt&mode=hybrid" | head -40
 systemctl status polign-node polign-demo
-sudo -u polign ps -o rss= -C polign-server   # expect well under GOMEMLIMIT
+ps -o rss= -C polign-server   # expect well under GOMEMLIMIT
+```
+
+## Prewarm after a deploy
+
+The first query touching a region of the corpus pays an S3 round trip per
+probed cell (~950 ms); everything after is served from the local disk cache
+(~45 ms). Run the curated examples once so the front page is warm:
+
+```sh
+python3 - <<'EOF'
+import json, urllib.parse, urllib.request
+qs = json.load(urllib.request.urlopen("http://localhost:23100/demo/meta"))["examples"]
+for q in qs:
+    for mode in ("semantic", "keyword", "hybrid"):
+        u = f"http://localhost:23100/demo/search?q={urllib.parse.quote(q)}&mode={mode}"
+        print(mode, q, json.load(urllib.request.urlopen(u))["took_ms"], "ms")
+EOF
 ```
 
 ## Gotchas

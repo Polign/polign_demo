@@ -1,0 +1,12 @@
+# Prepared dataset and scratch space — gigabytes of Wikipedia, rebuilt with
+# prepare/prepare.py rather than committed.
+/data/
+/work/
+.load-checkpoint-*.json
+
+# Built binaries
+/demo
+/load
+/polign-server
+/polign-maintain
+/bin/

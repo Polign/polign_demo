@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>polign_db demo — semantic, keyword, and hybrid search</title>
-<meta name="description" content="Live demo of polign_db: search 100,000 Wikipedia passages by meaning (vector), by keyword (BM25), or both fused in one query." />
+<meta name="description" content="Live demo of polign_db: search all of English Wikipedia by meaning (vector), by keyword (BM25), or both fused in one query — served cold from object storage on a 2 GB node." />
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%230F766E'/%3E%3Cstop offset='1' stop-color='%2314B8A6'/%3E%3C/linearGradient%3E%3Cmask id='m'%3E%3Crect width='32' height='32' fill='%23fff'/%3E%3Crect x='18.6' y='2.6' width='8.4' height='8.4' fill='%23000'/%3E%3C/mask%3E%3C/defs%3E%3Cpath mask='url(%23m)' fill='url(%23g)' fill-rule='evenodd' d='M9.5 27.5V4.5h9a9 9 0 0 1 0 18H14v5zM14 17.5h4.3a4 4 0 0 0 0-8H14z'/%3E%3Crect x='21' y='3.6' width='5.2' height='5.2' rx='1.6' fill='%232DD4BF'/%3E%3C/svg%3E" />
 <style>
 :root {
@@ -108,9 +108,9 @@ footer code { background: var(--chip); border-radius: 6px; padding: 2px 6px; fon
     </nav>
   </header>
 
-  <h1>Search <span id="corpus">100,000</span> Wikipedia passages three ways.</h1>
-  <p class="lead">This demo is built on a small instance of a polign_db node, with one corpus of
-    Wikipedia passages and three read paths: semantic, keyword, and hybrid search.
+  <h1>Search <span id="corpus">all of</span> Wikipedia three ways.</h1>
+  <p class="lead">Every passage of English Wikipedia, on a 2&nbsp;GB node that holds none of it in memory.
+    Each search is a cold read from object storage — semantic, keyword, or both fused into one query.
   </p>
 
   <div class="searchrow">
@@ -127,9 +127,9 @@ footer code { background: var(--chip); border-radius: 6px; padding: 2px 6px; fon
   <div id="out"></div>
 
   <footer>
-    <p>Queries are embedded in-process by the node (static embeddings, pure Go) — no external model API.
+    <p>Queries are embedded in-process (static embeddings, pure Go) — no external model API, no GPU.
     The same search is one HTTP call: <code id="curl">curl 'https://demo.polign.com/demo/search?q=…&amp;mode=hybrid'</code></p>
-    <p style="margin-top:6px">Text: <a href="https://simple.wikipedia.org">Simple English Wikipedia</a> (CC BY-SA 4.0) ·
+    <p style="margin-top:6px">Text: <a href="https://en.wikipedia.org">English Wikipedia</a> (CC BY-SA 4.0) ·
     Embeddings: <a href="https://huggingface.co/minishlab/potion-base-8M">potion-base-8M</a> (MIT) ·
     Engine: <a href="https://github.com/Polign/polign">polign_db</a></p>
   </footer>
@@ -233,7 +233,9 @@ $("go").onclick = run;
 $("q").addEventListener("keydown", e => { if (e.key === "Enter") run(); });
 
 fetch("/demo/meta").then(r => r.json()).then(meta => {
-  $("corpus").textContent = (meta.corpus || 0).toLocaleString();
+  // The heading reads "Search <corpus> Wikipedia three ways" — keep it a
+  // grammatical phrase whether or not the node reported a corpus size.
+  if (meta.corpus) $("corpus").textContent = meta.corpus.toLocaleString() + " passages of";
   $("chips").innerHTML = (meta.examples || []).map(x => `<button>${esc(x)}</button>`).join("");
   document.querySelectorAll("#chips button").forEach(b => b.onclick = () => { $("q").value = b.textContent; run(); });
 }).catch(() => {});

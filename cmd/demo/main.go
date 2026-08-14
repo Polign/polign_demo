@@ -77,18 +77,17 @@ func main() {
 		Handler:           srv.mux(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	go func() {
-		mode := "open"
-		if *public {
-			mode = "public (rate-limited)"
-		}
-		size := "unknown size"
-		if manifest != nil {
-			size = fmt.Sprintf("%d passages", manifest.Passages)
-		}
-		log.Printf("demo on http://localhost%s — %s, searching %q (%s) on %s",
-			*addr, mode, *collection, size, *node)
-	}()
+	mode := "open"
+	if *public {
+		mode = "public (rate-limited)"
+	}
+	size := "unknown size"
+	if manifest != nil {
+		size = fmt.Sprintf("%d passages", manifest.Passages)
+	}
+	log.Printf("demo on http://localhost%s — %s, searching %q (%s) on %s",
+		*addr, mode, *collection, size, *node)
+
 	go func() {
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("http: %v", err)
@@ -104,4 +103,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-

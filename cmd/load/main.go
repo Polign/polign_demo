@@ -45,6 +45,7 @@ func main() {
 	batch := flag.Int("batch", 512, "passages per upsert request")
 	workers := flag.Int("workers", 0, "concurrent upsert workers (0 = NumCPU)")
 	limit := flag.Int("limit", 0, "stop after this many passages (0 = the whole corpus); useful for smoke tests")
+	maxShards := flag.Int("shards", 0, "stop after this many shards this run (0 = all of them)")
 	resume := flag.Bool("resume", true, "skip shards already completed according to the checkpoint file")
 	timeout := flag.Duration("timeout", 2*time.Minute, "per-request timeout")
 	flag.Parse()
@@ -73,6 +74,12 @@ func main() {
 	}
 
 	cp := loadCheckpoint(*dir, *collection)
+	// Descriptive only — corpus.json is written by prepare.py and lets progress
+	// be reported against the whole corpus rather than just this run.
+	corpusTotal := 0
+	if m, merr := corpus.LoadManifest(*dir); merr == nil {
+		corpusTotal = m.Passages
+	}
 	l := &loader{
 		client: client, model: model, collection: *collection,
 		batch: *batch, workers: *workers, limit: *limit,
@@ -81,11 +88,21 @@ func main() {
 	log.Printf("loading %d shard(s) into %q at %s — dim %d, %d workers, batches of %d",
 		len(shards), *collection, *addr, model.Dim(), *workers, *batch)
 	start := time.Now()
+	loaded := 0
 	for i, shard := range shards {
 		name := filepath.Base(shard)
 		if *resume && cp.done(name) {
 			log.Printf("[%d/%d] %s — already loaded, skipping", i+1, len(shards), name)
 			continue
+		}
+		// -shards bounds one run, not the corpus. A node accumulates every
+		// write in its in-memory index as well as its write log, so a load
+		// this large is done in chunks with a node restart between them; the
+		// checkpoint makes each run pick up exactly where the last stopped.
+		if *maxShards > 0 && loaded >= *maxShards {
+			log.Printf("-shards %d reached for this run — %d shard(s) still to load",
+				*maxShards, len(shards)-i)
+			break
 		}
 		n, err := l.loadShard(ctx, shard)
 		if err != nil {
@@ -97,17 +114,24 @@ func main() {
 			log.Fatalf("%s: %v", name, err)
 		}
 		cp.markDone(name, n)
+		loaded++
 		if err := cp.save(); err != nil {
 			log.Printf("checkpoint: %v (the load continues; a rerun may redo this shard)", err)
 		}
-		log.Printf("[%d/%d] %s — %d passages (%d total, %.0f/s overall)",
-			i+1, len(shards), name, n, cp.Total, float64(cp.Total)/time.Since(start).Seconds())
+		// Two different numbers, kept apart on purpose: this run's rate is what
+		// tells you whether the load is healthy, while the corpus total is what
+		// tells you how far along it is. Dividing the total by this run's
+		// elapsed time would flatter a resumed run enormously.
+		log.Printf("[%d/%d] %s — %d passages at %.0f/s this run (%d of %d loaded)",
+			i+1, len(shards), name, n,
+			float64(l.sent.Load())/time.Since(start).Seconds(), cp.Total, corpusTotal)
 		if l.reachedLimit() {
 			log.Printf("-limit %d reached", *limit)
 			break
 		}
 	}
-	log.Printf("done: %d passages in %s", cp.Total, time.Since(start).Round(time.Second))
+	log.Printf("done: %d passages this run in %s; %d of %d loaded overall",
+		l.sent.Load(), time.Since(start).Round(time.Second), cp.Total, corpusTotal)
 	log.Printf("the node persists these writes as segments; the IVF-PQ generation is published by its maintenance pass (see deploy/README.md)")
 }
 
