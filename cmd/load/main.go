@@ -1,7 +1,8 @@
-// Command load streams a prepared Wikipedia corpus into a running polign_db
-// node over the public HTTP API.
+// Command load embeds a prepared Wikipedia corpus and hands it to polign_db,
+// by one of two routes.
 //
-//	load -dir ~/polign-demo-data -addr http://127.0.0.1:23000
+//	load -dir ~/polign-demo-data -out shard.jsonl      # bulk: for polign-import
+//	load -dir ~/polign-demo-data -addr http://...      # online: through a node
 //
 // It embeds each passage in-process with the same static model the search app
 // uses for queries (internal/embedder), so corpus and query vectors can never
@@ -11,10 +12,15 @@
 // picks up where it stopped. Upserts are idempotent, so replaying part of a
 // shard is harmless.
 //
-// The node on the other end is expected to run with -store, which is what
-// turns these writes into durable segments and, on the maintenance pass, a
-// published IVF-PQ generation. This command never touches object storage
-// itself.
+// -out is the right route for an initial corpus: it writes the JSONL that
+// polign-import turns into segments directly in object storage, skipping the
+// write log and the node's unpersisted-write buffer entirely.
+//
+// -addr is the online route, through a running node's HTTP API. That path is
+// built for live traffic — every write is logged and buffered until the
+// persistor covers it — so a node under a bulk load will push back once its
+// buffer fills (-overlay-max-buffered). This command treats that as flow
+// control and paces itself rather than failing.
 package main
 
 import (
@@ -48,6 +54,7 @@ func main() {
 	maxShards := flag.Int("shards", 0, "stop after this many shards this run (0 = all of them)")
 	resume := flag.Bool("resume", true, "skip shards already completed according to the checkpoint file")
 	timeout := flag.Duration("timeout", 2*time.Minute, "per-request timeout")
+	out := flag.String("out", "", `instead of writing to a node, embed to this JSONL file ("-" for stdout) for polign-import`)
 	flag.Parse()
 
 	if *dir == "" {
@@ -65,12 +72,29 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	client := polign.New(*addr, *timeout)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if err := client.Health(ctx); err != nil {
-		log.Fatalf("%v\n(start the node first: see deploy/README.md)", err)
+
+	// Two destinations, one embedding path. -out writes the JSONL that
+	// polign-import reads, which builds the segment index directly in object
+	// storage: no node, no write log, and none of the buffering that an online
+	// write path has to do. Use it for an initial corpus; use the node for
+	// incremental writes to a live collection.
+	var sink recordSink
+	if *out != "" {
+		s, cerr := newJSONLSink(*out)
+		if cerr != nil {
+			log.Fatal(cerr)
+		}
+		defer s.Close()
+		sink = s
+	} else {
+		client := polign.New(*addr, *timeout)
+		if err := client.Health(ctx); err != nil {
+			log.Fatalf("%v\n(start the node first: see deploy/README.md)", err)
+		}
+		sink = &nodeSink{client: client, collection: *collection}
 	}
 
 	cp := loadCheckpoint(*dir, *collection)
@@ -81,12 +105,16 @@ func main() {
 		corpusTotal = m.Passages
 	}
 	l := &loader{
-		client: client, model: model, collection: *collection,
-		batch: *batch, workers: *workers, limit: *limit,
+		sink: sink, model: model, collection: *collection,
+		batch: *batch, workers: *workers, limit: *limit, outPath: *out,
 	}
 
+	dest := *addr
+	if *out != "" {
+		dest = *out + " (JSONL for polign-import)"
+	}
 	log.Printf("loading %d shard(s) into %q at %s — dim %d, %d workers, batches of %d",
-		len(shards), *collection, *addr, model.Dim(), *workers, *batch)
+		len(shards), *collection, dest, model.Dim(), *workers, *batch)
 	start := time.Now()
 	loaded := 0
 	for i, shard := range shards {
@@ -122,9 +150,15 @@ func main() {
 		// tells you whether the load is healthy, while the corpus total is what
 		// tells you how far along it is. Dividing the total by this run's
 		// elapsed time would flatter a resumed run enormously.
-		log.Printf("[%d/%d] %s — %d passages at %.0f/s this run (%d of %d loaded)",
+		throttled := ""
+		if t := l.throttled.Load(); t > 0 {
+			// Not a warning: it means the loader is correctly pacing itself to
+			// the persistor instead of piling unindexed writes into node memory.
+			throttled = fmt.Sprintf(", %d batches paced by backpressure", t)
+		}
+		log.Printf("[%d/%d] %s — %d passages at %.0f/s this run (%d of %d loaded%s)",
 			i+1, len(shards), name, n,
-			float64(l.sent.Load())/time.Since(start).Seconds(), cp.Total, corpusTotal)
+			float64(l.sent.Load())/time.Since(start).Seconds(), cp.Total, corpusTotal, throttled)
 		if l.reachedLimit() {
 			log.Printf("-limit %d reached", *limit)
 			break
@@ -132,21 +166,26 @@ func main() {
 	}
 	log.Printf("done: %d passages this run in %s; %d of %d loaded overall",
 		l.sent.Load(), time.Since(start).Round(time.Second), cp.Total, corpusTotal)
-	log.Printf("the node persists these writes as segments; the IVF-PQ generation is published by its maintenance pass (see deploy/README.md)")
+	if l.outPath != "" {
+		log.Printf("next: polign-import -stores <spec> -collection %s -expected-size %d %s",
+			l.collection, corpusTotal, l.outPath)
+	}
 }
 
 // loader embeds and upserts one shard at a time. Embedding is CPU-bound and
 // upserting is network-bound, so both run on the same worker pool: each worker
 // takes a batch of passages, embeds them, and sends them.
 type loader struct {
-	client     *polign.Client
+	sink       recordSink
 	model      *embedder.Model
 	collection string
 	batch      int
 	workers    int
 	limit      int
 
-	sent atomic.Int64 // passages successfully upserted across all shards
+	outPath   string       // non-empty when emitting JSONL for polign-import
+	sent      atomic.Int64 // passages successfully upserted across all shards
+	throttled atomic.Int64 // batches the node pushed back on (see putWithBackpressure)
 }
 
 func (l *loader) reachedLimit() bool {
@@ -252,8 +291,42 @@ func (l *loader) send(ctx context.Context, ps []corpus.Passage) error {
 	if len(vecs) == 0 {
 		return nil
 	}
-	_, err := l.client.PutBatch(ctx, l.collection, vecs)
-	return err
+	return l.putWithBackpressure(ctx, vecs)
+}
+
+// putWithBackpressure upserts a batch, waiting out the node's backpressure
+// rather than failing on it.
+//
+// A node that serves cold-first buffers writes until the persistor covers them
+// with a segment, and refuses new ones once that buffer hits its cap
+// (-overlay-max-buffered). That refusal is not an error in any meaningful
+// sense: it is the node telling a loader that writes faster than the persistor
+// indexes — which this one does, by roughly 4x — to slow to the rate the
+// pipeline can actually absorb. Nothing was written, so the retry is safe, and
+// waiting is the correct response rather than something to report.
+func (l *loader) putWithBackpressure(ctx context.Context, vecs []polign.Vector) error {
+	for attempt := 0; ; attempt++ {
+		err := l.sink.Put(ctx, vecs)
+		var bp *polign.BackpressureError
+		if !errors.As(err, &bp) {
+			return err
+		}
+		l.throttled.Add(1)
+		wait := bp.RetryAfter
+		// Back off gently on a persistently full buffer so a stalled persistor
+		// does not turn into a tight retry loop.
+		if attempt > 3 {
+			wait *= 2
+		}
+		if wait > 30*time.Second {
+			wait = 30 * time.Second
+		}
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 func isZero(v []float32) bool {

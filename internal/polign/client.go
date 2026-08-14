@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -174,11 +175,43 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 		// Error bodies are small; include the node's own message, which is
 		// usually the actionable part (missing segment store, bad dim, ...).
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		return fmt.Errorf("polign: POST %s: %s: %s", path, resp.Status, bytes.TrimSpace(msg))
+		err := fmt.Errorf("polign: POST %s: %s: %s", path, resp.Status, bytes.TrimSpace(msg))
+		if resp.StatusCode == http.StatusServiceUnavailable {
+			// Backpressure: the node refused the write before logging anything
+			// because its unpersisted backlog hit the cap. Nothing was written,
+			// so the caller can safely retry after the advertised delay.
+			return &BackpressureError{err: err, RetryAfter: retryAfter(resp)}
+		}
+		return err
 	}
 	if out == nil {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// BackpressureError reports a write the node declined because its buffer of
+// unpersisted records is full. It is retryable by construction: the node
+// rejects before appending to the write log, so nothing was stored.
+type BackpressureError struct {
+	err        error
+	RetryAfter time.Duration
+}
+
+func (e *BackpressureError) Error() string { return e.err.Error() }
+func (e *BackpressureError) Unwrap() error { return e.err }
+
+// retryAfter reads the Retry-After header, falling back to a short delay when
+// it is absent or unparseable.
+func retryAfter(resp *http.Response) time.Duration {
+	const fallback = time.Second
+	secs, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After")))
+	if err != nil || secs < 0 {
+		return fallback
+	}
+	if secs == 0 {
+		return 100 * time.Millisecond
+	}
+	return time.Duration(secs) * time.Second
 }

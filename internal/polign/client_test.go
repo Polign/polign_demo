@@ -3,6 +3,7 @@ package polign
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -92,6 +93,68 @@ func TestErrorCarriesNodeMessage(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "400") {
 		t.Errorf("error lost the status: %v", err)
+	}
+}
+
+// TestBackpressureIsRetryable pins the contract the loader depends on: a 503
+// means the node refused the write before logging it, so it is safe to retry,
+// and it must be distinguishable from a real failure.
+func TestBackpressureIsRetryable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "2")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"write backlog full: unpersisted writes have reached the node's buffer cap"}`))
+	}))
+	defer srv.Close()
+
+	_, err := New(srv.URL, 5*time.Second).PutBatch(context.Background(), "c", []Vector{
+		{ID: "a", Values: []float32{1}},
+	})
+	var bp *BackpressureError
+	if !errors.As(err, &bp) {
+		t.Fatalf("expected a BackpressureError, got %v", err)
+	}
+	if bp.RetryAfter != 2*time.Second {
+		t.Errorf("RetryAfter = %v, want 2s from the header", bp.RetryAfter)
+	}
+	if !strings.Contains(err.Error(), "backlog") {
+		t.Errorf("error lost the node's message: %v", err)
+	}
+}
+
+// A 400 is a real failure and must NOT be retried.
+func TestNonBackpressureErrorIsNotRetryable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"dimension mismatch"}`))
+	}))
+	defer srv.Close()
+
+	_, err := New(srv.URL, 5*time.Second).PutBatch(context.Background(), "c", []Vector{
+		{ID: "a", Values: []float32{1}},
+	})
+	var bp *BackpressureError
+	if errors.As(err, &bp) {
+		t.Fatal("a 400 must not be treated as retryable backpressure")
+	}
+}
+
+// A 503 with no Retry-After still yields a usable delay.
+func TestBackpressureDefaultDelay(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	_, err := New(srv.URL, 5*time.Second).PutBatch(context.Background(), "c", []Vector{
+		{ID: "a", Values: []float32{1}},
+	})
+	var bp *BackpressureError
+	if !errors.As(err, &bp) {
+		t.Fatalf("expected a BackpressureError, got %v", err)
+	}
+	if bp.RetryAfter <= 0 {
+		t.Errorf("RetryAfter = %v, want a positive fallback", bp.RetryAfter)
 	}
 }
 
