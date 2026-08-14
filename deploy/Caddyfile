@@ -1,0 +1,31 @@
+# Caddy terminates TLS (auto-HTTPS via Let's Encrypt) and proxies to the demo
+# app. Only the app is exposed — the polign_db node listens on loopback and is
+# never reachable from outside this host.
+#
+# The DNS record for this name must be DNS-only (grey cloud on Cloudflare), or
+# the HTTP-01 challenge cannot reach Caddy.
+
+demo.polign.com {
+	encode zstd gzip
+
+	# The app reads the leftmost X-Forwarded-For hop for its per-client rate
+	# limit, so the real client IP has to arrive here.
+	reverse_proxy 127.0.0.1:23100 {
+		header_up X-Forwarded-For {remote_host}
+	}
+
+	header {
+		# The demo serves its own inline CSS/JS and links out to Wikipedia.
+		Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/demo.polign.com.log {
+			roll_size 20mb
+			roll_keep 5
+		}
+	}
+}

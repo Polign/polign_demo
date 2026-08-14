@@ -1,0 +1,43 @@
+[Unit]
+Description=polign Wikipedia search demo (UI + /demo endpoints)
+Documentation=https://github.com/Polign/polign_demo
+After=network-online.target polign-node.service
+Wants=network-online.target
+BindsTo=polign-node.service
+
+[Service]
+Type=simple
+User=polign
+Group=polign
+
+# -public is the hosted posture: UI and the read-only /demo endpoints only,
+# rate-limited per client, with the query knobs fixed by the operator rather
+# than accepted from the browser.
+#
+# -nprobe is the one number worth tuning here. The node's default is nlist/4,
+# which at 6M passages means probing ~25% of the corpus on every query — far
+# too much IO for a small box. 24 keeps recall high at a fraction of the cost;
+# raise it if results feel thin, lower it if latency climbs.
+#
+# -dir holds only the embedding model (~30 MB) and corpus.json. The passages
+# live in S3, reached through the node.
+Environment=GOMEMLIMIT=256MiB
+ExecStart=/opt/polign/bin/polign-demo \
+    -public \
+    -http 127.0.0.1:23100 \
+    -node http://127.0.0.1:23000 \
+    -dir /opt/polign/data \
+    -collection wikipedia \
+    -nprobe 24 \
+    -k 8
+
+Restart=always
+RestartSec=5s
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target
