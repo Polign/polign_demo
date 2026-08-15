@@ -62,6 +62,16 @@ h1 { font-size: clamp(22px, 4vw, 30px); line-height: 1.25; letter-spacing: -.01e
   border: 1px solid var(--line); border-radius: 999px; padding: 5px 13px; cursor: pointer;
 }
 .chips button:hover { border-color: var(--teal2); }
+#notice {
+  display: flex; gap: 9px; align-items: flex-start;
+  font-size: 13.5px; line-height: 1.5; color: var(--ink);
+  background: var(--chip); border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px 13px; margin: 16px 0 2px;
+}
+#notice::before {
+  content: ""; flex: none; width: 7px; height: 7px; margin-top: 7px;
+  border-radius: 50%; background: var(--teal2);
+}
 .status { min-height: 22px; font-size: 13.5px; color: var(--muted); margin: 14px 0 6px; }
 .status b { color: var(--ink); }
 .card {
@@ -123,26 +133,30 @@ footer code { background: var(--chip); border-radius: 6px; padding: 2px 6px; fon
     <span class="modehint" id="modehint"></span>
   </div>
   <div class="chips" id="chips"></div>
+  <div id="notice" hidden></div>
   <div class="status" id="status"></div>
   <div id="out"></div>
 
   <footer>
-    <p>Queries are embedded in-process (static embeddings, pure Go) — no external model API, no GPU.
+    <p><span id="embedclaim">Queries are embedded on this host — no external model API, no GPU.</span>
     The same search is one HTTP call: <code id="curl">curl 'https://demo.polign.com/demo/search?q=…&amp;mode=hybrid'</code></p>
     <p style="margin-top:6px">Text: <a href="https://en.wikipedia.org">English Wikipedia</a> (CC BY-SA 4.0) ·
-    Embeddings: <a href="https://huggingface.co/minishlab/potion-retrieval-32M">potion-retrieval-32M</a> (MIT) ·
+    Embeddings: <a id="modellink" href="https://huggingface.co">model</a> ·
     Engine: <a href="https://github.com/Polign/polign">polign_db</a></p>
   </footer>
 </div>
 
 <script>
 "use strict";
-const MODES = [
+const ALL_MODES = [
   { id: "semantic", label: "Semantic",        hint: "vector similarity — finds meaning, forgives wording" },
   { id: "keyword",  label: "Keyword (BM25)",  hint: "exact terms — nails names, numbers, rare words" },
   { id: "hybrid",   label: "Hybrid (fused)",  hint: "both legs, one query, fused with Reciprocal Rank Fusion" },
-  { id: "compare",  label: "Compare all",     hint: "run all three side by side" },
 ];
+const COMPARE = { id: "compare", label: "Compare all", hint: "run every mode side by side" };
+// Filled from /demo/meta: a deployment serves only the modes its node can
+// afford, so the toggles are built from what the server reports, never assumed.
+let MODES = [...ALL_MODES, COMPARE];
 let mode = "hybrid";
 const $ = (id) => document.getElementById(id);
 
@@ -193,20 +207,23 @@ async function run() {
   try {
     if (mode === "compare") {
       const t0 = performance.now();
-      const [sem, kw, hyb] = await Promise.all([
-        fetchMode(q, "semantic"), fetchMode(q, "keyword"), fetchMode(q, "hybrid")]);
+      const ids = MODES.filter(m => m.id !== "compare").map(m => m.id);
+      const results = await Promise.all(ids.map(id => fetchMode(q, id)));
+      const byId = Object.fromEntries(ids.map((id, i) => [id, results[i]]));
+      const sem = byId.semantic, kw = byId.keyword, hyb = byId.hybrid;
       const ms = performance.now() - t0;
-      const rankOf = (d) => { const m = new Map(); (d.results || []).forEach((r, i) => m.set(r.id, i + 1)); return m; };
+      const rankOf = (d) => { const m = new Map(); ((d && d.results) || []).forEach((r, i) => m.set(r.id, i + 1)); return m; };
       const semR = rankOf(sem), kwR = rankOf(kw);
       const col = (title, sub, d, xr) =>
         `<div><h3>${title} <small>· ${sub} · ${d.took_ms.toFixed(1)} ms</small></h3>` +
         (d.results || []).slice(0, 5).map((r, i) => card(r, i, d.score_kind, q, xr && xr(r))).join("") + "</div>";
-      $("out").innerHTML = '<div class="compare">' +
-        col("Semantic", "cosine", sem) +
-        col("Keyword", "BM25", kw) +
-        col("Hybrid", "RRF", hyb, (r) => [["sem", semR.get(r.id)], ["kw", kwR.get(r.id)]]) +
-        "</div>";
-      $("status").innerHTML = `three searches over <b>${(hyb.corpus || 0).toLocaleString()}</b> passages in <b>${ms.toFixed(0)} ms</b> — hybrid rows show where each result ranked (or didn’t) in the single-leg searches`;
+      let html = "";
+      if (sem) html += col("Semantic", "cosine", sem);
+      if (kw) html += col("Keyword", "BM25", kw);
+      if (hyb) html += col("Hybrid", "RRF", hyb, (r) => [["sem", semR.get(r.id)], ["kw", kwR.get(r.id)]]);
+      $("out").innerHTML = '<div class="compare">' + html + "</div>";
+      const any = hyb || sem || kw;
+      $("status").innerHTML = `${ids.length} searches over <b>${(any.corpus || 0).toLocaleString()}</b> passages in <b>${ms.toFixed(0)} ms</b>`;
     } else {
       const d = await fetchMode(q, mode);
       $("out").innerHTML = (d.results || []).map((r, i) => card(r, i, d.score_kind, q)).join("") ||
@@ -223,12 +240,16 @@ async function run() {
 function setMode(m) {
   mode = m;
   document.querySelectorAll("#seg button").forEach(b => b.classList.toggle("on", b.dataset.m === m));
-  $("modehint").textContent = MODES.find(x => x.id === m).hint;
+  const info = MODES.find(x => x.id === m);
+  $("modehint").textContent = info ? info.hint : "";
   if ($("q").value.trim()) run();
 }
 
-$("seg").innerHTML = MODES.map(m => `<button data-m="${m.id}" role="tab">${m.label}</button>`).join("");
-document.querySelectorAll("#seg button").forEach(b => b.onclick = () => setMode(b.dataset.m));
+function renderModes() {
+  $("seg").innerHTML = MODES.map(m => `<button data-m="${m.id}" role="tab">${m.label}</button>`).join("");
+  document.querySelectorAll("#seg button").forEach(b => b.onclick = () => setMode(b.dataset.m));
+}
+renderModes();
 $("go").onclick = run;
 $("q").addEventListener("keydown", e => { if (e.key === "Enter") run(); });
 
@@ -236,8 +257,34 @@ fetch("/demo/meta").then(r => r.json()).then(meta => {
   // The heading reads "Search <corpus> Wikipedia three ways" — keep it a
   // grammatical phrase whether or not the node reported a corpus size.
   if (meta.corpus) $("corpus").textContent = meta.corpus.toLocaleString() + " passages of";
+  if (Array.isArray(meta.modes) && meta.modes.length) {
+    MODES = ALL_MODES.filter(m => meta.modes.includes(m.id));
+    if (MODES.length > 1) MODES.push(COMPARE);   // nothing to compare against with one mode
+    if (!MODES.some(m => m.id === mode)) mode = MODES[0].id;
+    renderModes();
+    setMode(mode);
+  }
   $("chips").innerHTML = (meta.examples || []).map(x => `<button>${esc(x)}</button>`).join("");
   document.querySelectorAll("#chips button").forEach(b => b.onclick = () => { $("q").value = b.textContent; run(); });
+
+  // The embedder is a deployment choice, so the footer reports what this node
+  // actually runs rather than naming one model in the markup. The two differ in
+  // a way worth being straight about: the static model is arithmetic inside the
+  // Go binary, while the transformer runs in a local ONNX sidecar — still on
+  // this host, still no API call and no GPU, but not "in-process, pure Go".
+  if (meta.notice) {
+    $("notice").textContent = meta.notice;
+    $("notice").hidden = false;
+  }
+  if (meta.model) {
+    const el = $("modellink");
+    el.textContent = meta.model.includes("/") ? meta.model.split("/")[1] : meta.model;
+    el.href = "https://huggingface.co/" + meta.model;
+    const isStatic = /potion|model2vec/i.test(meta.model);
+    $("embedclaim").textContent = isStatic
+      ? "Queries are embedded in-process (static embeddings, pure Go) — no external model API, no GPU."
+      : "Queries are embedded on this host by a local ONNX sidecar — no external model API, no GPU.";
+  }
 }).catch(() => {});
 
 // Shareable links: /?q=...&mode=compare auto-runs on load.

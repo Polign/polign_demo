@@ -1,11 +1,11 @@
-# Caddy terminates TLS (auto-HTTPS via Let's Encrypt) and proxies to the demo
-# app. Only the app is exposed — the polign_db node listens on loopback and is
-# never reachable from outside this host.
+# Caddy for the v2 demo host. Same posture as Caddyfile: TLS terminates here and
+# only the app is exposed — the node (23000) and the embedding sidecar (23200)
+# listen on loopback and are never reachable from outside this host.
 #
-# The DNS record for this name must be DNS-only (grey cloud on Cloudflare), or
-# the HTTP-01 challenge cannot reach Caddy.
+# The DNS record must be DNS-only (grey cloud on Cloudflare), or the HTTP-01
+# challenge cannot reach Caddy.
 
-demowiki.polign.com {
+demowiki2.polign.com {
 	encode zstd gzip
 
 	# The app reads the leftmost X-Forwarded-For hop for its per-client rate
@@ -22,7 +22,7 @@ demowiki.polign.com {
 	}
 
 	log {
-		output file /var/log/caddy/demo.polign.com.log {
+		output file /var/log/caddy/demowiki2.polign.com.log {
 			roll_size 20mb
 			roll_keep 5
 		}

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,14 +31,35 @@ const (
 
 type server struct {
 	client     *polign.Client
-	model      *embedder.Model
+	model      embedder.Embedder
 	collection string
 	defaultK   int
 	nprobe     int
 	rescore    int
 	public     bool
 	examples   []string
-	manifest   *corpus.Manifest
+	// notice, when set, is surfaced in the UI as a banner. Its reason for
+	// existing is the load window: a collection is searchable from its first
+	// published generation, long before the last shard lands, so the page has
+	// to say that results come from a partial index rather than let a visitor
+	// read a miss as the corpus not containing something.
+	notice string
+
+	// dir is re-read for corpus.json whenever the file changes, so a build that
+	// updates the manifest as shards land is reflected without restarting the
+	// app (and without dropping the connection of whoever is mid-search).
+	dir          string
+	manifestMu   sync.RWMutex
+	manifest     *corpus.Manifest
+	manifestTime time.Time
+	// modes are the search paths this deployment serves, in UI order. It is a
+	// deployment decision, not a UI one: the BM25 legs (keyword, hybrid) read
+	// every lexical segment per query, so their memory scales with the
+	// corpus's total text rather than with the query. On a large collection
+	// that can exceed a small node's RAM and kill it — so a deployment that
+	// cannot afford them turns them off here rather than leaving a query that
+	// takes the node down one click away.
+	modes []string
 
 	limiter *demoLimiter
 	once    sync.Once
@@ -58,17 +81,47 @@ func (s *server) mux() http.Handler {
 	return mux
 }
 
+// currentManifest returns the manifest, re-reading corpus.json first if it has
+// changed on disk. A missing or malformed file keeps the last good copy: the
+// count is decoration, and losing it should never take the demo down.
+func (s *server) currentManifest() *corpus.Manifest {
+	if s.dir == "" {
+		return nil
+	}
+	var mtime time.Time
+	if fi, err := os.Stat(filepath.Join(s.dir, "corpus.json")); err == nil {
+		mtime = fi.ModTime()
+	}
+
+	s.manifestMu.RLock()
+	cur, seen := s.manifest, s.manifestTime
+	s.manifestMu.RUnlock()
+	if cur != nil && mtime.Equal(seen) {
+		return cur
+	}
+
+	s.manifestMu.Lock()
+	defer s.manifestMu.Unlock()
+	if m, err := corpus.LoadManifest(s.dir); err == nil {
+		s.manifest, s.manifestTime = m, mtime
+	}
+	return s.manifest
+}
+
 func (s *server) handleMeta(w http.ResponseWriter, _ *http.Request) {
 	meta := map[string]any{
-		"modes":    []string{modeSemantic, modeKeyword, modeHybrid},
+		"modes":    s.modes,
 		"examples": s.examples,
 		"public":   s.public,
 	}
-	if s.manifest != nil {
-		meta["corpus"] = s.manifest.Passages
-		meta["articles"] = s.manifest.Articles
-		meta["dataset"] = s.manifest.Dataset
-		meta["model"] = s.manifest.Model
+	if s.notice != "" {
+		meta["notice"] = s.notice
+	}
+	if m := s.currentManifest(); m != nil {
+		meta["corpus"] = m.Passages
+		meta["articles"] = m.Articles
+		meta["dataset"] = m.Dataset
+		meta["model"] = m.Model
 	}
 	writeJSON(w, meta)
 }
@@ -102,10 +155,10 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	mode := r.URL.Query().Get("mode")
 	if mode == "" {
-		mode = modeHybrid
+		mode = s.defaultMode()
 	}
-	if mode != modeSemantic && mode != modeKeyword && mode != modeHybrid {
-		http.Error(w, "mode must be semantic, keyword, or hybrid", http.StatusBadRequest)
+	if !s.modeEnabled(mode) {
+		http.Error(w, "mode must be one of: "+strings.Join(s.modes, ", "), http.StatusBadRequest)
 		return
 	}
 	k := s.defaultK
@@ -149,8 +202,8 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		Query: q, Mode: mode, ScoreKind: scoreKind(mode),
 		TookMS: float64(took.Microseconds()) / 1000,
 	}
-	if s.manifest != nil {
-		resp.Corpus = s.manifest.Passages
+	if m := s.currentManifest(); m != nil {
+		resp.Corpus = m.Passages
 	}
 	for _, h := range hits {
 		resp.Results = append(resp.Results, searchResult{
@@ -169,7 +222,10 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
 func (s *server) search(ctx context.Context, q, mode string, k, nprobe int) ([]polign.Hit, time.Duration, error) {
 	opts := polign.QueryOptions{K: k, Cold: true, NProbe: nprobe, Rescore: s.rescore}
 	if mode != modeKeyword {
-		vec := s.model.Embed(q)
+		vec, err := s.model.Embed(ctx, q)
+		if err != nil {
+			return nil, 0, err
+		}
 		// A query of entirely unknown words embeds to the zero vector, which
 		// ranks against nothing. On the hybrid path the text leg still works,
 		// so drop the vector leg rather than failing the request.
@@ -203,6 +259,24 @@ func displayScore(mode string, h polign.Hit) float32 {
 		return polign.Cosine(h.Distance)
 	}
 	return h.Score
+}
+
+// defaultMode is the mode a request without one gets: hybrid when available
+// (it is the best of the three), else the first enabled.
+func (s *server) defaultMode() string {
+	if s.modeEnabled(modeHybrid) {
+		return modeHybrid
+	}
+	return s.modes[0]
+}
+
+func (s *server) modeEnabled(mode string) bool {
+	for _, m := range s.modes {
+		if m == mode {
+			return true
+		}
+	}
+	return false
 }
 
 func scoreKind(mode string) string {

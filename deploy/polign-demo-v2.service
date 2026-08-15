@@ -1,0 +1,56 @@
+[Unit]
+Description=polign Wikipedia search demo v2 (UI + /demo endpoints)
+Documentation=https://github.com/Polign/polign_demo
+After=network-online.target polign-node-v2.service polign-embedserve.service
+Wants=network-online.target
+BindsTo=polign-node-v2.service
+
+[Service]
+Type=simple
+User=polign
+Group=polign
+
+# -embed-addr is what makes this v2: query embedding moves out of this process
+# and into the bge-small sidecar, which is the model that embedded the
+# wikipedia_bge collection. The pairing is not optional — a query embedded by
+# the old static model against this collection returns near-noise — so the app
+# refuses to start if the sidecar is not answering.
+#
+# -dir no longer holds an embedding model, only corpus.json for the UI's
+# passage count. GOMEMLIMIT drops accordingly: the 129 MB resident matrix that
+# forced 400 MiB on the v1 host is simply not here.
+#
+# -nprobe: cells probed per cold query, the dominant latency knob. At 384 dims a
+# cell of ~3,500 vectors is ~5.4 MB against v1's ~11 MB at 512 dims, and
+# compaction packed co-probed cells into shared objects, so a probe set costs
+# far fewer round trips than the per-cell GETs v1 paid. That is what buys the
+# higher probe count here: v1 was pinned at 4 and measurably missed top hits.
+#
+# -modes semantic: unchanged from v1, and for the same measured reason. The BM25
+# legs read every lexical segment per query (~10 GB at this corpus size), which
+# OOM-kills a 2 GB node. Re-enable once segindex.SearchText fetches only the
+# postings a query's terms need.
+Environment=GOMEMLIMIT=200MiB
+ExecStart=/opt/polign/bin/polign-demo \
+    -public \
+    -modes semantic \
+    -http 127.0.0.1:23100 \
+    -node http://127.0.0.1:23000 \
+    -embed-addr http://127.0.0.1:23200 \
+    -embed-dim 384 \
+    -dir /opt/polign/data \
+    -collection wikipedia_bge \
+    -nprobe 16 \
+    -k 8 \
+    -notice "This index is still being built — searches run against the passages loaded so far, and coverage grows through the day. A missing article usually means it has not landed yet."
+
+Restart=always
+RestartSec=5s
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,42 @@
+[Unit]
+Description=polign demo query embedder (bge-small-en-v1.5, ONNX)
+Documentation=https://github.com/Polign/polign_demo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=polign
+Group=polign
+
+# The v2 collection was embedded with bge-small-en-v1.5, so its queries must be
+# too -- a query embedded by any other model is searching a different space and
+# returns near-noise. This service is that model, held resident so the cost is
+# paid once at boot rather than per query.
+#
+# One thread on purpose: a query is a single short sequence, so extra intra-op
+# threads cost more in synchronization than they save, and the second core is
+# better spent on the node. Measured 8-10 ms per query embedding.
+#
+# ~380 MiB resident: the int8 graph is 33 MB on disk, but onnxruntime's arena
+# plus the tokenizer and the Python runtime dominate. Budgeted against the
+# node's GOMEMLIMIT in polign-node-v2.service -- the two must fit the box
+# together.
+Environment=OMP_NUM_THREADS=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/polign/venv/bin/python /opt/polign/bin/embedserve.py \
+    --model /opt/polign/data/bge-small \
+    --host 127.0.0.1 \
+    --port 23200 \
+    --threads 1
+
+Restart=always
+RestartSec=5s
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target
