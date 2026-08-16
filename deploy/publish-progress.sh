@@ -18,9 +18,12 @@ INTERVAL=${INTERVAL:-300}
 export AWS_REGION=${AWS_REGION:-us-east-1}
 
 while true; do
-    # Sum the importer's own per-flush tallies: the log is the only place that
-    # knows what was durably published, as opposed to merely embedded.
-    loaded=$(grep -o "imported [0-9]*" "$LOGS/import.log" 2>/dev/null |
+    # Sum the importer's per-run totals, not its per-flush progress lines. The
+    # progress lines report a running total *within* one import, so a shard
+    # larger than -batch logs several of them ("imported 400000", then
+    # "imported 401378") and adding those up counts the same vectors twice —
+    # which inflated this number by ~6% before it was caught.
+    loaded=$(grep -oE "done: [0-9]+ vectors into" "$LOGS/import.log" 2>/dev/null |
              awk '{s+=$2} END {print s+0}')
     printf '{"loaded":%s}\n' "${loaded:-0}" > /tmp/progress.json
     aws s3 cp /tmp/progress.json "s3://$BUCKET/app/progress.json" --only-show-errors

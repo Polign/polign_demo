@@ -3,7 +3,13 @@ Description=polign Wikipedia search demo v2 (UI + /demo endpoints)
 Documentation=https://github.com/Polign/polign_demo
 After=network-online.target polign-node-v2.service polign-embedserve.service
 Wants=network-online.target
+# BindsTo stops this app if the node goes away — it has nothing to serve without
+# one. PartOf is what brings it back: BindsTo propagates a *stop* but not a
+# restart, so upgrading the node binary took the site down and left it down
+# until someone noticed. With both, `systemctl restart polign-node-v2` cycles
+# the app too.
 BindsTo=polign-node-v2.service
+PartOf=polign-node-v2.service
 
 [Service]
 Type=simple
