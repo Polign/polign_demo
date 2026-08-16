@@ -261,12 +261,21 @@ func displayScore(mode string, h polign.Hit) float32 {
 	return h.Score
 }
 
-// defaultMode is the mode a request without one gets: hybrid when available
-// (it is the best of the three), else the first enabled.
+// defaultMode is the mode a request without one gets: the first entry of
+// -modes, so the deployment picks it.
+//
+// This used to prefer hybrid unconditionally, on the reasoning that fusing both
+// legs beats either alone. Measured on the 12.5M Wikipedia collection, it does
+// not: the BM25 leg surfaces disambiguation and list pages (short documents,
+// dense in the query terms, and this analyzer has no stop-word or title
+// handling), so reciprocal-rank fusion pulls a good semantic ranking down
+// toward a poor lexical one. "roger federer" ranks the biography first on
+// semantic and third on hybrid.
+//
+// Hybrid stays available — it is the right answer for exact-name lookups on a
+// corpus whose lexical side is tuned — but a deployment should not get it by
+// default merely because it is enabled.
 func (s *server) defaultMode() string {
-	if s.modeEnabled(modeHybrid) {
-		return modeHybrid
-	}
 	return s.modes[0]
 }
 
