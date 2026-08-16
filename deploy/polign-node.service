@@ -1,5 +1,5 @@
 [Unit]
-Description=polign_db serving node (cold-first, read-only)
+Description=polign_db serving node, v2 collection (cold-first, read-only)
 Documentation=https://github.com/Polign/polign_demo
 After=network-online.target
 Wants=network-online.target
@@ -9,30 +9,24 @@ Type=simple
 User=polign
 Group=polign
 
-# The serving node holds no corpus. Every flag below exists to keep it that
-# way — the -store preset would otherwise turn this box into a full read-write
-# node that restores the whole collection into RAM on boot.
+# Same cold-first posture as polign-node.service — the node holds no corpus,
+# every flag below keeps it that way. See that file for what each one prevents.
 #
-#   -restore-stores ""   do not rebuild the in-memory index at boot. Without
-#                        this the node loads all 6M vectors (~6 GB) on start.
-#   -hot-max 0           never promote a collection to the in-memory hot tier.
-#                        Promotion transiently materializes the full index.
-#   -persist=false       this node does not consume the write log; the build
-#                        host did that.
-#   -maintain 0          index maintenance runs on the build host, not here.
-#   -tail-fresh=false    a read-only demo has no writes to catch up on, and the
-#                        log tail follower costs a few hundred MB of RSS.
-#   -log-stores ""       no write log at all, for the same reason.
+# What differs on this host is the memory split. The v1 box ran one Go app whose
+# static embedding matrix was 129 MB resident; here the query embedder is a
+# separate Python process (polign-embedserve.service, ~380 MiB) because the
+# model is ONNX. So the node's ceiling comes down to leave room for it:
 #
-# What is left is the cold read path: manifest + centroids resident, cells
-# fetched from S3 per query and cached on local disk.
-# The node's live set is tiny (manifest + centroids); this bounds the garbage a
-# burst of cold queries generates, each of which fetches nprobe cells. Sized so
-# node + demo app (400 MiB) still leave the 2 GB box room to breathe.
+#   node (this)      1000 MiB limit, ~420 MiB typical under queries
+#   embedserve        ~380 MiB resident
+#   demo app           ~30 MiB (it no longer loads any model of its own)
+#
+# on a 2 GB box. The disk cache is what keeps the node's RSS flat as the corpus
+# grows: cells land on local disk, not in the heap.
 Environment=GOMEMLIMIT=1000MiB
 Environment=AWS_REGION=us-east-1
 ExecStart=/opt/polign/bin/polign-server \
-    -store s3://REPLACE_BUCKET/polign \
+    -store s3://polign-demo-wiki-en/polign \
     -restore-stores "" \
     -hot-max 0 \
     -persist=false \
@@ -49,8 +43,6 @@ ExecStart=/opt/polign/bin/polign-server \
 Restart=always
 RestartSec=5s
 
-# The node is reachable only over loopback; Caddy and the demo app are the
-# only things that talk to it.
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict

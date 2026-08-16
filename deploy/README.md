@@ -1,221 +1,168 @@
-# Deploying the demo
+# Deploying the v2 demo (bge-small)
 
-Two hosts, because they have opposite needs:
+v2 is the same corpus, the same cold-first serving posture, and the same 2 GB
+node as [README.md](README.md). One thing changed: the embedding model. That one
+change is why this file exists, because it moves work across process and host
+boundaries that v1 kept in one place.
 
-| | build host | serving host |
+## Why v2 exists
+
+The v1 demo embedded with `potion-retrieval-32M`, a model2vec static embedder: a
+sentence vector is the normalized mean of its token vectors. That is what made
+v1's app so small — no inference runtime, no cgo, pure Go — and it is also the
+thing that capped its accuracy. A static model has no attention, so it cannot
+represent a relation between words, only their average. Measured on the live v1
+deployment:
+
+| query | v1 top hit |
+|---|---|
+| `capital of france` | History of Rennes — "administrative capital of the French department of Ille-et-Vilaine" |
+| `who invented the telephone` | Kazuo Hashimoto — a Japanese answering-machine inventor |
+| `causes of world war one` | the correct article ranked 5th |
+
+Those are not retrieval-recall failures. Raising `nprobe` from 1 to 16 on v1 left
+the top hits identical, which is the signature of the ranking being as good as
+the embedding allows. `capital-ish + France-ish` genuinely does score Rennes
+above Paris under a bag-of-token-vectors model.
+
+v2 embeds with `BAAI/bge-small-en-v1.5`: a real 12-layer encoder, 384 dims, run
+as int8 ONNX. It costs ~150x more compute per passage, which is what the build
+pipeline below is shaped around.
+
+## What that changes structurally
+
+| | v1 | v2 |
 |---|---|---|
-| job | embed + load 12.5M passages, publish the IVF-PQ generation | answer queries |
-| lives for | a few hours | indefinitely |
-| size | 8 vCPU / 16 GB (`c7g.2xlarge`, ~$0.29/hr) | 2 vCPU / 2 GB (`t4g.small`, ~$12/mo) |
-| holds the corpus | yes, while building | **no** |
+| query embedding | in Go, in the app process | ONNX sidecar on loopback (`embedserve.py`) |
+| passage embedding | `cmd/load` (Go) | `prepare/embed.py` on a 48-vCPU host |
+| dims | 512 | 384 |
+| app RSS | ~400 MiB (129 MB matrix resident) | ~30 MiB app + ~380 MiB sidecar |
+| corpus embed cost | minutes | ~7 h on `c7g.12xlarge` |
 
-They meet at an S3 bucket. Nothing else is shared: the serving host never sees
-the dataset files, and the build host is terminated when it is done.
+The demo is still self-hosted end to end: no model API, no GPU, no key. It is no
+longer *in-process*, and the footer says so rather than repeating v1's claim.
 
-## Measurements
+**The pairing is not optional.** A collection embedded by one model can only be
+queried by that same model — a bge query vector against the potion collection
+(or the reverse) is searching a different space and returns near-noise. The two
+deployments are therefore fully separate: different collection, different host,
+different service files. `polign-demo` refuses to start if `-embed-addr` is set
+and the sidecar is not answering, so the mismatch cannot happen silently.
 
-Production, `t4g.small` serving node against S3, 12.5M-passage corpus,
-`nprobe=24`:
+The asymmetric prefix is the subtle half of that contract. bge embeds passages
+bare and queries behind `"Represent this sentence for searching relevant
+passages: "`. `embedserve.py` owns the prefix and `embed.py` deliberately does
+not apply it; getting this backwards costs real recall and nothing errors.
 
-| | |
-|---|---|
-| node RSS, idle | **28 MiB** |
-| node RSS, after queries | ~420 MiB (bounded by `GOMEMLIMIT=1400MiB`) |
-| first query for a topic (cold from S3) | ~950 ms |
-| repeat query (local disk cache) | 40–65 ms |
-| corpus prepare (41 parquet files) | ~50 min on `c7g.2xlarge` |
-| load rate into S3-backed node | ~1,000 passages/s |
+## Build host
 
-The gap between 950 ms and 45 ms is the whole cold-storage story: the first
-query for a region of the corpus pays an S3 round trip for each cell it probes,
-and everything after that is served from the local disk cache. Prewarming the
-example queries after a deploy (see below) means the demo's front page is warm
-before anyone touches it.
-
-From a 60,000-passage slice on an M-series Mac, `fs:` store — useful because it
-isolates the engine from S3 latency:
+`c7g.12xlarge` (48 vCPU, arm64) — memory is irrelevant here, cores are
+everything. Measured throughput, int8, length-bucketed batches:
 
 | | |
 |---|---|
-| load rate | 4,658 passages/s (12 workers, batches of 512) (256-dim model; the shipped 512-dim model runs slower) |
-| store size | 330 MB for 60k → **~60 GB projected for 12.5M at 512 dims** (WAL, segments, cells, BM25) |
-| serving node RSS, idle | **15 MiB** |
-| serving node RSS, under queries | ~278 MiB (transient per-query allocations; cap with `GOMEMLIMIT`) |
-| cold query, `nprobe=16` | 14 ms |
-| cold query, `nprobe=32` | 22 ms |
+| per vCPU, 8-vCPU box | 15.8 passages/s |
+| per vCPU, 48-vCPU box | ~11 passages/s (memory-bandwidth bound) |
+| full corpus (12.5M) | ~7 h, ~$12 |
 
-RSS does not grow with the corpus — that is the entire point of the cold path.
-What *does* grow is the bytes one query fetches: cells hold ~√N vectors each,
-so a cell at 12.5M is ~14× a cell at 60k. That is why `-nprobe` is pinned
-explicitly in `polign-demo.service` instead of using the node's `nlist/4`
-default, which at 12.5M would probe roughly a quarter of the corpus per query.
+Two things that did *not* help, so nobody repeats them: x86 with AVX-512 VNNI
+(`c7i`) measured 127 passages/s against Graviton3's 119 on the same 8 vCPU — a
+wash at higher cost. And N single-threaded ONNX sessions matched one N-threaded
+session almost exactly (126 vs 127 passages/s at 8 cores); the work is genuinely
+compute-bound, not synchronization-bound.
 
-## 1. Bucket
-
-```sh
-BUCKET=polign-demo-wiki-en           # must be globally unique
-aws s3 mb "s3://$BUCKET" --region us-east-1
-aws s3api put-public-access-block --bucket "$BUCKET" \
-    --public-access-block-configuration \
-    "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
-```
-
-The bucket stays private. Both hosts reach it with an instance profile, never
-with keys on disk.
-
-## 2. Build host
-
-Launch `c7g.2xlarge` (arm64, Amazon Linux 2023) with the instance profile and
-at least a 120 GB gp3 volume — `prepare.py` needs room for parquet downloads
-plus ~4 GB of JSONL.
+What *did* help, 1.6x: sorting each window by length before batching. Passages
+run p50=105 tokens against a 256 cap, so a naive batch spends most of its FLOPs
+on padding.
 
 ```sh
-sudo dnf install -y docker git golang && sudo systemctl start docker
-git clone https://github.com/Polign/polign_demo && cd polign_demo
+# Prepared shards live in the bucket (prepare.py output, model-independent),
+# so a build host needs no parquet download and no 50-minute prepare step.
+aws s3 sync s3://polign-demo-wiki-en/prepared/ ~/data/
 
-# ~20 GB of parquet in, ~4 GB of JSONL out. Resumable: rerun after any
-# interruption and it picks up at the next shard.
-mkdir -p data work
-sudo docker run --rm -v "$PWD/data:/out" -v "$PWD/work:/work" -v "$PWD/prepare:/prep" \
-    python:3.12-slim sh -c 'pip install -q pyarrow && python /prep/prepare.py --out /out --work /work'
-
-# Load in parallel lanes: each lane is its own node plus its own slice of the
-# shards, restarting per shard. Do not substitute one long `cmd/load` run at
-# this scale — see "Why the load is shaped this way" below.
-python3 ./deploy/split-dataset.py 3        # data-p0, data-p1, data-p2
-for lane in 0 1 2; do
-    persist=false; [ $lane = 0 ] && persist=true    # only lane 0 persists
-    STORE="s3://$BUCKET/polign" setsid nohup \
-        ./deploy/load-lane.sh $lane $((23000 + lane*10)) $((23001 + lane*10)) $persist \
-        > ~/logs/lane$lane.log 2>&1 &
-done
-# ~4 h for 12.5M at 875 passages/s on 8 vCPU. Watch:
-#   tail -f ~/logs/lane*.log
-
-# Publish the IVF-PQ collection generation and its CodesOnly structure
-# generation. This is the expensive, RAM-hungry step the serving host must
-# never run.
-polign-maintain -store "s3://$BUCKET/polign"
+STORE=s3://polign-demo-wiki-en/polign COLLECTION=wikipedia_bge \
+MODEL=~/bge-small WORKERS=48 ./build-index-v2.sh
 ```
 
-For a small slice (a smoke test, not the real corpus) a single run is fine:
+### Two lanes, and why the writer one is serial
+
+`build-index.sh` (v1) ran embed → import → embed → import in series. That was
+fine when the two costs were comparable. They are not any more: embedding a
+305k-passage shard takes ~400 s on 48 vCPU while importing the resulting JSONL
+takes ~30 s at 8,775 vec/s. In series the 48-core box idles through every
+import.
+
+`build-index-v2.sh` runs them as concurrent lanes, so the entire write cost
+disappears under the following embed. The embed lane writes `NNN.jsonl` and then
+`NNN.ready` as a completion fence; the writer lane only opens a shard whose
+fence exists, so it can never read a half-written file. The on-disk queue is
+bounded (`QUEUE_MAX`), which matters only if the writer ever falls behind — it
+does not, by an order of magnitude. The log shows the overlap directly:
+
+```
+[embed 001/41] passages-00000.jsonl
+[embed 002/41] passages-00001.jsonl     <- next shard already embedding
+[write 001] importing 1.7G              <- while the last one is written
+```
+
+The writer lane is internally serial, and that is a correctness constraint, not
+a missed optimization. `segindex.Builder` is a collection's single manifest
+writer: it owns the generation counter and the in-memory manifest, so a `Flush`
+and a `Compact` *within one process* are serialized by its mutex and can never
+race. Two concurrent `polign-import` processes are two Builders over one
+collection — a corrupt-manifest race, not a speedup. Since the lane is idle for
+~370 s of every 400 s cycle anyway, serializing it costs nothing.
+
+Compaction runs **once, at the end**. A query reads every segment in the cells it
+probes (`GETs/query = nprobe × segments-per-cell`), so the index must end
+compacted — but `Compact()` rescans and rewrites every cell collection-wide, so
+each pass costs the whole corpus. Compacting every K shards would move roughly
+`(N/K + 1)/2` times the corpus instead of once (~140 GB against ~56 GB at K=10),
+and buys nothing, because nothing queries the collection while it is being built.
+
+It also would not fit in the embed lane's shadow, which is what an earlier
+version of this pipeline assumed. `segindex.Compact` walked its cells serially,
+making a full pass a multi-hour single-core operation against a ~12 min embed
+cycle — it would have stalled the writer, filled the queue, and then blocked the
+embed lane behind it. That asymmetry is now fixed upstream (`Compact` rebuilds
+cells in waves of `GOMAXPROCS`, 5.9x on 12 cores, byte-identical output), but
+the placement argument above holds regardless, so `COMPACT_EVERY` defaults to 0.
+
+One other knob follows from the same reasoning: `IMPORT_BATCH=400000` gives one
+flush per shard instead of `polign-import`'s default 100k batches. Each flush
+publishes a generation and drops a segment into every cell it touched, and a
+100k batch spread over ~3,540 cells leaves ~28 vectors per segment — ~545k tiny
+objects for the final compaction to scan, against ~145k at one flush per shard.
+
+## Serving host
+
+`t4g.small`, same cold-first flags as v1. Three processes now share 2 GB:
+
+| | |
+|---|---|
+| node, idle | 27 MiB |
+| node, under queries | ~420 MiB (`GOMEMLIMIT=1000MiB`) |
+| embedserve sidecar | ~380 MiB resident |
+| demo app | ~30 MiB (no model of its own) |
 
 ```sh
-polign-server -store "s3://$BUCKET/polign" -maintain 0 &
-go run ./cmd/load -dir ./data -addr http://127.0.0.1:23000
+sudo /tmp/provision-v2.sh          # installs binaries, venv, model, units
+sudo systemctl enable --now polign-node-v2 polign-embedserve polign-demo-v2
+sudo cp deploy/Caddyfile-v2 /etc/caddy.Caddyfile && sudo systemctl reload caddy
 ```
 
-Then **terminate the instance**. Everything durable is in S3.
+Query-side embedding measured **8–18 ms** on the 2-vCPU box — small against the
+cold read it precedes, which is the point of choosing `small` over `base`.
 
-Only `data/model.json`, `data/vocab.txt`, `data/embeddings.f32` and
-`data/corpus.json` are needed afterwards (~130 MB) — copy them to the serving
-host, or keep a copy in the bucket.
+## Known gaps, unchanged from v1
 
-## 3. Serving host
-
-Launch `t4g.small` (arm64, Amazon Linux 2023, 20 GB gp3 — the disk cache is
-budgeted 6 GB) with the same instance profile.
-
-```sh
-sudo useradd --system --home /var/lib/polign polign
-sudo mkdir -p /opt/polign/bin /opt/polign/data /var/lib/polign/disk-cache
-sudo chown -R polign:polign /var/lib/polign /opt/polign
-
-# Cross-compiled locally: CGO_ENABLED=0 GOOS=linux GOARCH=arm64
-#   go build -o polign-demo ./cmd/demo          (this repo)
-#   go build -tags cloud -o polign-server ./cmd/server   (polign_db)
-# The "cloud" build tag is required for s3:// support.
-scp polign-server polign-demo   ec2-user@HOST:/tmp/
-scp data/{model.json,vocab.txt,embeddings.f32,corpus.json} ec2-user@HOST:/tmp/data/
-
-sudo install -m 0755 /tmp/polign-{server,demo} /opt/polign/bin/
-sudo cp /tmp/data/* /opt/polign/data/
-
-sudo cp deploy/polign-node.service deploy/polign-demo.service /etc/systemd/system/
-sudo sed -i "s/REPLACE_BUCKET/$BUCKET/" /etc/systemd/system/polign-node.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now polign-node polign-demo
-```
-
-Caddy in front:
-
-```sh
-sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
-sudo systemctl restart caddy
-```
-
-Point the DNS A record at the host — **DNS-only / grey cloud** on Cloudflare,
-or Caddy's HTTP-01 challenge fails.
-
-## Checks
-
-```sh
-curl -s localhost:23100/healthz
-curl -s "localhost:23100/demo/search?q=why+do+volcanoes+erupt&mode=hybrid" | head -40
-systemctl status polign-node polign-demo
-ps -o rss= -C polign-server   # expect well under GOMEMLIMIT
-```
-
-## Prewarm after a deploy
-
-The first query touching a region of the corpus pays an S3 round trip per
-probed cell (~950 ms); everything after is served from the local disk cache
-(~45 ms). Run the curated examples once so the front page is warm:
-
-```sh
-python3 - <<'EOF'
-import json, urllib.parse, urllib.request
-qs = json.load(urllib.request.urlopen("http://localhost:23100/demo/meta"))["examples"]
-for q in qs:
-    for mode in ("semantic", "keyword", "hybrid"):
-        u = f"http://localhost:23100/demo/search?q={urllib.parse.quote(q)}&mode={mode}"
-        print(mode, q, json.load(urllib.request.urlopen(u))["took_ms"], "ms")
-EOF
-```
-
-## Why the load is shaped this way
-
-A node applies every write to its in-memory HNSW index as well as appending it
-to the durable write log. For a bulk import that is pure overhead — the serving
-node reads segments from object storage and never touches this index — and it
-costs on two axes:
-
-- **Memory.** One process holding 12.5M passages needs ~25 GB.
-- **Time.** HNSW insertion slows as the graph grows: ~1,700/s into an empty
-  index, ~400/s at a million vectors. Insert is single-writer per node, so one
-  node cannot use more than a core or so of the machine for it.
-
-Two knobs follow from that, and `load-lane.sh` uses both:
-
-1. **Restart per shard** (`cmd/load -shards 1`, node restarted with
-   `-restore-stores ""`). The in-memory index starts empty every time, so
-   insertion stays at its fast rate. The write log is the source of truth, so
-   nothing is lost; the loader's checkpoint resumes exactly where it stopped.
-2. **Several lanes.** Since the limit is per node, run N nodes against the same
-   bucket, each loading a disjoint slice of shards (`split-dataset.py`). They
-   all append to the shared write log, which is built for a fleet; only lane 0
-   runs the persistor (`-persist=true`), the rest are pure writers.
-
-Measured on `c7g.2xlarge` (8 vCPU) with the 512-dim model: one lane ~390/s,
-three lanes **~875/s**. Three lanes put load average at ~14 on 8 cores, so a
-fourth would only add contention — the right lane count is roughly
-`vCPU / 3`. Verify concurrency is healthy before trusting a long run:
-
-```sh
-grep -icE "error|conflict|failed" ~/logs/node-p*.log   # expect 0 everywhere
-grep -c "wrote segment" ~/logs/node-p0.log             # only lane 0 persists
-```
-
-## Gotchas
-
-- **A cold searcher can outrun its segments.** Right after a load, the node may
-  hold a manifest whose cells have since been compacted away, and queries fail
-  with `object not found` until the next refresh (`-segment-refresh`). It is
-  self-healing; wait one refresh interval before concluding anything is broken.
-- **`-restore-stores ""` is load-bearing.** Drop it and the serving node tries
-  to rebuild all 12.5M vectors in RAM at boot, and dies on a 2 GB box.
-- **Do not enable the hot tier here.** Promotion transiently materializes the
-  full index, which is exactly what this host cannot afford.
-- **Query knobs are not public inputs.** `-public` fixes `nprobe` at the
-  operator's value; without it, a browser could ask for the most expensive
-  query the node can run.
+- **Keyword and hybrid modes stay off.** `segindex.SearchText` fetches every live
+  lexical segment per query and then iterates every document in each to build
+  corpus statistics — ~10 GB at this corpus size, which OOM-kills the node. This
+  is measured, not theoretical. Fixing it means partitioning postings by term and
+  precomputing per-segment stats into the manifest, at which point hybrid becomes
+  affordable here and fixes the keyword-shaped queries an embedder never will.
+- **The cold path reads full f32 segments.** The engine has `internal/ivfpq` with
+  `CodesOnly` generations and exact rescore, but only the hot tier uses them; a
+  cold ADC pass over PQ codes would cut bytes-per-query ~50x and let `nprobe` go
+  up rather than down.
