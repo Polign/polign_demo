@@ -1,4 +1,4 @@
-"""Sweep nprobe against the v2 collection, measuring quality and cost together.
+"""Sweep nprobe against a collection, measuring quality and cost together.
 
 Run this ON the serving host: it talks to the node and the embedding sidecar
 directly, because the public app deliberately fixes nprobe (it is the knob that
@@ -8,8 +8,10 @@ nprobe is the cold path's whole cost model. A cell holds ~sqrt(N) vectors, so at
 12.5M each is several MB of full-f32 vectors plus the passage text stored beside
 them, and a query fetches nprobe of them. Quality rises with nprobe and so does
 latency, so the operating point has to be chosen from measurements rather than
-assumed — v1 pinned 4 on the reasoning that higher bought nothing, which was
-true only because its static embedder, not its recall, was the binding limit.
+assumed. On this corpus quality turned out to be flat from 8 to 64, because the
+embedder — not IVF recall — is what limits results, so the setting is purely a
+cost decision here. That is worth re-checking per deployment rather than
+inheriting.
 
     python3 sweep-nprobe.py --nprobes 4,8,16,24,32
 

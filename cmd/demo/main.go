@@ -3,11 +3,11 @@
 //
 //	demo -dir ~/polign-demo-data -node http://127.0.0.1:23000
 //
-// It holds no corpus. Its only state is the static embedding model it uses to
-// turn a query string into a vector (~30 MB); every search is one cold query
-// against the node, which serves it from object storage. That split is the
-// point of this repo: the app is stateless and small, and the corpus can be
-// millions of passages without changing what the app costs to run.
+// It holds no corpus and no index. A search is: embed the query (via the
+// sidecar), send one cold query to the node, render what comes back. The node
+// serves it from object storage. That split is the point of this repo — the app
+// is stateless and small, and the corpus can grow to millions of passages
+// without changing what the app costs to run.
 //
 // -public is the hosted configuration: UI plus the read-only /demo endpoints
 // only, rate-limited per client, with no path through to the node's write API.
@@ -34,45 +34,36 @@ import (
 func main() {
 	addr := flag.String("http", ":24000", "listen address for the UI and /demo endpoints")
 	node := flag.String("node", "http://127.0.0.1:23000", "polign_db node HTTP address")
-	dir := flag.String("dir", "", "dataset directory holding the embedding model and corpus.json (required)")
+	dir := flag.String("dir", "", "directory holding corpus.json and examples.txt (required)")
 	collection := flag.String("collection", "wikipedia", "collection to search")
-	embedAddr := flag.String("embed-addr", "", "bge-small sidecar address (e.g. http://127.0.0.1:23200). Empty uses the in-process static model in -dir. It must match whatever embedded the collection: the two models are not interchangeable")
-	embedDim := flag.Int("embed-dim", 384, "vector width the sidecar returns, checked against every reply (-embed-addr only)")
+	embedAddr := flag.String("embed-addr", "", "embedding sidecar address, e.g. http://127.0.0.1:23200 (required). It must run the same model that embedded the collection — vectors from two models are points in different spaces")
+	embedDim := flag.Int("embed-dim", 384, "vector width the sidecar returns, checked against every reply")
 	notice := flag.String("notice", "", "banner text shown above the results, e.g. to say the index is still loading. A collection is searchable from its first published generation, so this is how a partial index says so rather than letting a miss look like an absence")
 	k := flag.Int("k", 8, "results per query")
 	nprobe := flag.Int("nprobe", 0, "IVF cells probed per cold query (0 = the node's default): higher is better recall, more IO")
 	rescore := flag.Int("rescore", 0, "exact-rescore pool on a compressed collection (0 = node default, <0 = ADC-only)")
 	public := flag.Bool("public", false, "hosted mode: rate-limited, no /v1 passthrough, no query knobs from the browser")
-	modes := flag.String("modes", "semantic,keyword,hybrid", "search paths to serve, comma-separated: semantic, keyword, hybrid. The BM25 legs (keyword, hybrid) read every lexical segment per query, so on a large corpus they need far more node memory than semantic — drop them when the node cannot afford it")
+	modes := flag.String("modes", "semantic,keyword,hybrid", "search paths to serve, comma-separated: semantic, keyword, hybrid. The first is the default for a request that names no mode")
 	timeout := flag.Duration("timeout", 20*time.Second, "per-query timeout against the node")
 	flag.Parse()
 
 	if *dir == "" {
-		log.Fatal("-dir is required (the directory holding corpus.json, and the static model unless -embed-addr is set)")
+		log.Fatal("-dir is required (the directory holding corpus.json)")
+	}
+	if *embedAddr == "" {
+		log.Fatal("-embed-addr is required (the embedding sidecar; see serve/embedserve.py)")
 	}
 
-	// Two query embedders, one contract: whichever embedded the collection must
-	// embed the queries. -embed-addr selects the bge-small sidecar (the v2
-	// collection); its absence keeps the in-process static model (v1).
-	var model embedder.Embedder
-	embedderName := "static model2vec (in-process)"
-	if *embedAddr != "" {
-		remote := embedder.NewRemote(*embedAddr, *embedDim, *timeout)
-		probeCtx, cancelProbe := context.WithTimeout(context.Background(), 30*time.Second)
-		err := remote.Health(probeCtx)
+	// The query embedder must be the model that embedded the collection, so the
+	// app proves it is reachable before serving rather than failing on a
+	// visitor's first search.
+	model := embedder.NewRemote(*embedAddr, *embedDim, *timeout)
+	probeCtx, cancelProbe := context.WithTimeout(context.Background(), 30*time.Second)
+	if err := model.Health(probeCtx); err != nil {
 		cancelProbe()
-		if err != nil {
-			log.Fatalf("%v\n(is embedserve.py running? see deploy/README-v2.md)", err)
-		}
-		model = remote
-		embedderName = fmt.Sprintf("bge-small sidecar at %s (%d dims)", *embedAddr, *embedDim)
-	} else {
-		m, err := embedder.Load(*dir)
-		if err != nil {
-			log.Fatal(err)
-		}
-		model = embedder.Static{M: m}
+		log.Fatalf("%v\n(is serve/embedserve.py running? see deploy/README.md)", err)
 	}
+	cancelProbe()
 
 	// corpus.json is written by prepare.py and is descriptive only — the app
 	// reports it in the UI. A missing manifest is not fatal: the demo still
@@ -117,8 +108,8 @@ func main() {
 	if manifest != nil {
 		size = fmt.Sprintf("%d passages", manifest.Passages)
 	}
-	log.Printf("demo on http://localhost%s — %s, searching %q (%s) on %s, embedding with %s",
-		*addr, mode, *collection, size, *node, embedderName)
+	log.Printf("demo on http://localhost%s — %s, searching %q (%s) on %s, embedding via %s (%d dims)",
+		*addr, mode, *collection, size, *node, *embedAddr, *embedDim)
 
 	go func() {
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

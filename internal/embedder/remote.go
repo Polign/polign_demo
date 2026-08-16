@@ -9,32 +9,19 @@ import (
 	"time"
 )
 
-// Embedder turns a query string into a vector. The demo has two
-// implementations: the in-process static Model, and Remote, which calls the
-// bge-small sidecar over loopback. Both are query-side only -- the corpus is
-// embedded offline by the build host -- but they must agree with whatever
-// embedded the collection being searched, so the two are never mixed within one
-// deployment.
-type Embedder interface {
-	Embed(ctx context.Context, text string) ([]float32, error)
-}
-
-// Static adapts the in-process Model to Embedder. Its Embed cannot fail and
-// ignores the context: it is pure arithmetic over a resident matrix.
-type Static struct{ M *Model }
-
-func (s Static) Embed(_ context.Context, text string) ([]float32, error) {
-	return s.M.Embed(text), nil
-}
-
-// Remote is a client for prepare/embedserve.py -- bge-small-en-v1.5 running as
-// a loopback HTTP sidecar. The demo uses it for the v2 collection, whose
-// passages were embedded with the same model: a real 12-layer encoder rather
-// than a static token-vector average, which is what lets a query like "capital
-// of france" rank Paris over every other French city.
+// Remote is a client for serve/embedserve.py, the sentence-transformer that
+// turns query text into a vector.
 //
-// The sidecar owns the query prefix bge requires, so callers pass raw query
-// text and this type stays a transport.
+// Embedding runs in its own process because the model is ONNX and this app is
+// Go. What matters is not where it runs but that it is the *same* model that
+// embedded the passages: a collection can only be searched by the model that
+// wrote it, because a vector from any other model is a point in a different
+// space and its nearest neighbours mean nothing. That pairing is why the app
+// refuses to start when the sidecar is unreachable, and why Embed checks the
+// width of every reply.
+//
+// The sidecar owns the asymmetric query prefix the model expects, so callers
+// pass raw query text and this type stays a transport.
 type Remote struct {
 	url    string
 	client *http.Client

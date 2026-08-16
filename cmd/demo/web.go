@@ -31,34 +31,29 @@ const (
 
 type server struct {
 	client     *polign.Client
-	model      embedder.Embedder
+	model      *embedder.Remote
 	collection string
 	defaultK   int
 	nprobe     int
 	rescore    int
 	public     bool
 	examples   []string
-	// notice, when set, is surfaced in the UI as a banner. Its reason for
-	// existing is the load window: a collection is searchable from its first
-	// published generation, long before the last shard lands, so the page has
-	// to say that results come from a partial index rather than let a visitor
-	// read a miss as the corpus not containing something.
+	// notice, when set, is surfaced in the UI as a banner — for example to say
+	// the index is still loading. A collection is searchable from its first
+	// published generation, long before the last batch lands, so this is how a
+	// partial index says so rather than letting a miss look like an absence.
 	notice string
 
-	// dir is re-read for corpus.json whenever the file changes, so a build that
-	// updates the manifest as shards land is reflected without restarting the
-	// app (and without dropping the connection of whoever is mid-search).
+	// dir is re-read for corpus.json whenever the file changes, so a manifest
+	// updated while the index is loading is picked up without restarting the
+	// app (and without dropping whoever is mid-search).
 	dir          string
 	manifestMu   sync.RWMutex
 	manifest     *corpus.Manifest
 	manifestTime time.Time
-	// modes are the search paths this deployment serves, in UI order. It is a
-	// deployment decision, not a UI one: the BM25 legs (keyword, hybrid) read
-	// every lexical segment per query, so their memory scales with the
-	// corpus's total text rather than with the query. On a large collection
-	// that can exceed a small node's RAM and kill it — so a deployment that
-	// cannot afford them turns them off here rather than leaving a query that
-	// takes the node down one click away.
+	// modes are the search paths this deployment serves, in UI order. The first
+	// is the default, so the order encodes which one the operator considers
+	// best for their corpus — see defaultMode.
 	modes []string
 
 	limiter *demoLimiter
@@ -226,9 +221,8 @@ func (s *server) search(ctx context.Context, q, mode string, k, nprobe int) ([]p
 		if err != nil {
 			return nil, 0, err
 		}
-		// A query of entirely unknown words embeds to the zero vector, which
-		// ranks against nothing. On the hybrid path the text leg still works,
-		// so drop the vector leg rather than failing the request.
+		// A zero vector ranks against nothing. On the hybrid path the text leg
+		// still works, so drop the vector leg rather than failing the request.
 		if !isZero(vec) {
 			opts.Values = vec
 		}

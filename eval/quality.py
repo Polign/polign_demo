@@ -1,16 +1,17 @@
 """Compare retrieval quality between two demo deployments.
 
-The v1 -> v2 change is an embedding-model swap, and the honest way to report it
-is against a fixed query set scored the same way for both, not by picking
-examples after the fact. Each case names the article a competent search should
-surface; scoring asks only whether that article appears, and how high.
+Comparing two deployments — different models, different modes, different
+settings — only means something against a fixed query set scored the same way
+for both, rather than examples picked after the fact. Each case names the
+article a competent search should surface; scoring asks only whether it appears,
+and how high.
 
     eval-quality.py --base https://demowiki.polign.com
     eval-quality.py --base https://demowiki2.polign.com --mode semantic
 
 Cases are deliberately mixed: some are relational (the static model's known
 weakness), some are plain topic lookups (where it should do fine), and a few are
-keyword-shaped. A fair comparison has to include the ones v1 gets right.
+keyword-shaped. A fair comparison has to include what each approach is good at.
 """
 import argparse
 import json

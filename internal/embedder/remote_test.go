@@ -40,7 +40,7 @@ func TestRemoteEmbedRequestShape(t *testing.T) {
 	}
 }
 
-// TestRemoteEmbedRejectsWrongDim guards the pairing that makes v2 correct: a
+// TestRemoteEmbedRejectsWrongDim guards the model/collection pairing: a
 // collection can only be queried by the model that embedded it. A reply of the
 // wrong width means the sidecar is serving a different model, and failing here
 // beats passing it to the node, which would report a confusing dimension
@@ -101,11 +101,4 @@ func TestRemoteHealth(t *testing.T) {
 	if err := r.Health(context.Background()); err == nil {
 		t.Error("want an error when the sidecar is down")
 	}
-}
-
-// TestStaticImplementsEmbedder keeps the v1 path usable through the same
-// interface, so one binary serves both deployments.
-func TestStaticImplementsEmbedder(t *testing.T) {
-	var _ Embedder = Static{}
-	var _ Embedder = (*Remote)(nil)
 }

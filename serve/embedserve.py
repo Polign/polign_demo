@@ -10,7 +10,7 @@ endpoint, loopback only, no dependencies beyond onnxruntime and transformers.
 The prefix is the subtle part. bge is trained asymmetrically: passages are
 embedded bare, queries are embedded behind "Represent this sentence for
 searching relevant passages: ". Dropping it costs real recall, so it lives here
-rather than in the caller, where it could be forgotten -- prepare/embed.py
+rather than in the caller, where it could be forgotten -- index/embed.py
 deliberately does NOT apply it to passages.
 
 Single-threaded on purpose: a query is one short sequence, extra intra-op

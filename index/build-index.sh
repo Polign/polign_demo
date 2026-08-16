@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build the v2 (bge-small) collection from prepared passage shards, running the
+# Build the collection from prepared passage shards, running the
 # embedder and the index writer as two concurrent lanes.
 #
 # Why two lanes. build-index.sh runs embed -> import -> embed -> import strictly
@@ -34,7 +34,7 @@
 # then block the embed lane behind it, which is the opposite of the point.
 # Set COMPACT_EVERY to a positive number only for a run you expect to interrupt.
 #
-#   STORE=s3://bkt/polign MODEL=~/bge-small ./build-index-v2.sh
+#   STORE=s3://bkt/polign MODEL=~/bge-small ./build-index.sh
 set -u
 
 DATA=${DATA:-$HOME/data}
@@ -44,7 +44,7 @@ STORE=${STORE:?set STORE, e.g. s3://your-bucket/polign}
 MODEL=${MODEL:-$HOME/bge-small}
 COLLECTION=${COLLECTION:-wikipedia_bge}
 PYTHON=${PYTHON:-$HOME/venv/bin/python}
-EMBED=${EMBED:-$HOME/polign_demo/prepare/embed.py}
+EMBED=${EMBED:-$HOME/polign_demo/index/embed.py}
 WORKERS=${WORKERS:-$(nproc)}
 # How many embedded-but-unimported shards may sit on disk. Each is ~1.7 GB, and
 # the queue only ever fills if the writer falls behind the embedder, which is

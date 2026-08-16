@@ -1,5 +1,5 @@
 [Unit]
-Description=polign_db serving node, v2 collection (cold-first, read-only)
+Description=polign_db serving node (cold-first, read-only)
 Documentation=https://github.com/Polign/polign_demo
 After=network-online.target
 Wants=network-online.target
@@ -9,13 +9,11 @@ Type=simple
 User=polign
 Group=polign
 
-# Same cold-first posture as polign-node.service — the node holds no corpus,
-# every flag below keeps it that way. See that file for what each one prevents.
+# The node holds no corpus; every flag below is there to keep it that way. Left
+# alone, -store expands into a full read-write deployment that rebuilds the
+# index in RAM at boot, which a 2 GB box cannot survive.
 #
-# What differs on this host is the memory split. The v1 box ran one Go app whose
-# static embedding matrix was 129 MB resident; here the query embedder is a
-# separate Python process (polign-embedserve.service, ~380 MiB) because the
-# model is ONNX. So the node's ceiling comes down to leave room for it:
+# The memory ceiling leaves room for the other two processes on this host:
 #
 #   node (this)      1000 MiB limit, ~420 MiB typical under queries
 #   embedserve        ~380 MiB resident

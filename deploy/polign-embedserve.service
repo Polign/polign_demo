@@ -20,7 +20,7 @@ Group=polign
 #
 # ~380 MiB resident: the int8 graph is 33 MB on disk, but onnxruntime's arena
 # plus the tokenizer and the Python runtime dominate. Budgeted against the
-# node's GOMEMLIMIT in polign-node-v2.service -- the two must fit the box
+# node's GOMEMLIMIT in polign-node.service -- the two must fit the box
 # together.
 Environment=OMP_NUM_THREADS=1
 Environment=PYTHONUNBUFFERED=1

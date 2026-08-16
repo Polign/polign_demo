@@ -1,14 +1,12 @@
 """Embed prepared passage shards with bge-small-en-v1.5 into polign-import JSONL.
 
-This replaces the static model2vec embedder for the v2 collection. The static
-model has no attention, so it represents a passage as roughly a bag of token
-vectors: "the capital of France" and "a French departmental capital" embed to
-nearly the same point, which is exactly the failure the v2 demo exists to fix.
-bge-small is a real 12-layer encoder at 384 dims, and it costs about 150x more
-compute per passage — hence the batching care below.
+This is the expensive half of building the index: a real 12-layer encoder at 384
+dims, roughly 150x the compute per passage of a static token-averaging model,
+and worth it — the model is the single largest factor in result quality (see
+eval/). The batching care below is what makes that cost tolerable.
 
 Two properties are load-bearing for accuracy, and both must match at query time
-(see cmd/embedserve):
+(see serve/embedserve.py):
 
   - CLS pooling, then L2 normalization. bge is trained that way; mean pooling
     silently degrades it.
