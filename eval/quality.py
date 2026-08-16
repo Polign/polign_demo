@@ -6,8 +6,8 @@ for both, rather than examples picked after the fact. Each case names the
 article a competent search should surface; scoring asks only whether it appears,
 and how high.
 
-    eval-quality.py --base https://demowiki.polign.com
-    eval-quality.py --base https://demowiki2.polign.com --mode semantic
+    quality.py --base https://demo.polign.com
+    quality.py --base https://demo.polign.com --mode semantic
 
 Cases are deliberately mixed: some are relational (the static model's known
 weakness), some are plain topic lookups (where it should do fine), and a few are

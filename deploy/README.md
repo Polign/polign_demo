@@ -96,9 +96,9 @@ sudo useradd --system --home /var/lib/polign polign
 sudo mkdir -p /opt/polign/bin /opt/polign/data /var/lib/polign/disk-cache /var/log/caddy
 sudo chown -R polign:polign /var/lib/polign /opt/polign
 
-# From polign_db, built with the "cloud" tag for s3:// support:
-#   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags cloud -o polign-server ./cmd/server
-# From this repo:
+# polign-server comes from polign_db (brew install polign/tap/polign, or the
+# releases page at github.com/Polign/polign/releases). Take the linux arm64
+# build for this host. polign-demo is cross-compiled from this repo:
 #   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o polign-demo ./cmd/demo
 sudo install -m 0755 polign-server polign-demo /opt/polign/bin/
 sudo install -m 0644 serve/embedserve.py /opt/polign/bin/
@@ -109,6 +109,7 @@ sudo /opt/polign/venv/bin/pip install -q onnxruntime transformers numpy
 sudo chown -R polign:polign /opt/polign
 
 sudo cp deploy/*.service /etc/systemd/system/
+sudo sed -i "s/REPLACE_BUCKET/$BUCKET/" /etc/systemd/system/polign-node.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now polign-node polign-embedserve polign-demo
 

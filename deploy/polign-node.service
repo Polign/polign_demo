@@ -24,7 +24,7 @@ Group=polign
 Environment=GOMEMLIMIT=1000MiB
 Environment=AWS_REGION=us-east-1
 ExecStart=/opt/polign/bin/polign-server \
-    -store s3://polign-demo-wiki-en/polign \
+    -store s3://REPLACE_BUCKET/polign \
     -restore-stores "" \
     -hot-max 0 \
     -persist=false \

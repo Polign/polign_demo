@@ -21,10 +21,22 @@ If you read nothing else, read that file and the "How it works" section below.
 
 ## What you need
 
-* A `polign-server` and `polign-import` binary from polign_db
-* Go 1.21 or newer
-* Python 3.11 or newer
-* Docker (only for the first step, to read Wikipedia's parquet files)
+Install polign_db. It is one static binary set, with no database server to
+administer and no dependencies to install:
+
+```sh
+brew install polign/tap/polign
+```
+
+That gives you `polign-server` (serves queries) and `polign-import` (builds an
+index). If you are not on Homebrew, the same binaries are on the
+[releases page](https://github.com/Polign/polign/releases).
+
+You also need:
+
+* Go 1.21 or newer, to run the search app
+* Python 3.11 or newer, for the embedding model
+* Docker, only for the first step, to read Wikipedia's parquet files
 * About 15 minutes and 5 GB of free disk
 
 ## Try it locally
