@@ -1,0 +1,164 @@
+{
+  "base": "https://demowiki2.polign.com",
+  "mode": "keyword",
+  "n": 30,
+  "hit_at": {
+    "1": 0,
+    "3": 1,
+    "10": 3
+  },
+  "mrr": 0.023611111111111107,
+  "latency_p50_ms": 6576.34,
+  "rows": [
+    {
+      "q": "capital of france",
+      "rank": null,
+      "top": "Cayenne"
+    },
+    {
+      "q": "who invented the telephone",
+      "rank": null,
+      "top": "Strowger"
+    },
+    {
+      "q": "what causes the seasons",
+      "rank": null,
+      "top": "Causes of seizures"
+    },
+    {
+      "q": "why is the sky blue",
+      "rank": null,
+      "top": "Blue skies research"
+    },
+    {
+      "q": "who wrote romeo and juliet",
+      "rank": null,
+      "top": "Romeo and Juliet (disambiguation)"
+    },
+    {
+      "q": "largest planet in the solar system",
+      "rank": null,
+      "top": "Saturn"
+    },
+    {
+      "q": "what year did the berlin wall fall",
+      "rank": null,
+      "top": "West of the Wall"
+    },
+    {
+      "q": "first person to walk on the moon",
+      "rank": null,
+      "top": "First Flights with Neil Armstrong"
+    },
+    {
+      "q": "who painted the mona lisa",
+      "rank": null,
+      "top": "Isleworth Mona Lisa"
+    },
+    {
+      "q": "longest river in the world",
+      "rank": null,
+      "top": "List of bridges in China"
+    },
+    {
+      "q": "what is the speed of light",
+      "rank": null,
+      "top": "One-way speed of light"
+    },
+    {
+      "q": "currency of japan",
+      "rank": null,
+      "top": "Currency Museum"
+    },
+    {
+      "q": "who discovered penicillin",
+      "rank": null,
+      "top": "Norman Heatley"
+    },
+    {
+      "q": "tallest mountain on earth",
+      "rank": null,
+      "top": "Sagarmatha Sambaad"
+    },
+    {
+      "q": "capital city of australia",
+      "rank": 3,
+      "top": "Capital City Authority"
+    },
+    {
+      "q": "theory of relativity",
+      "rank": 4,
+      "top": "Ebenezer Cunningham"
+    },
+    {
+      "q": "causes of world war one",
+      "rank": 8,
+      "top": "Hermann Lutz"
+    },
+    {
+      "q": "how do volcanoes erupt",
+      "rank": null,
+      "top": "Mountain formation"
+    },
+    {
+      "q": "photosynthesis in plants",
+      "rank": null,
+      "top": "Photosynthetic efficiency"
+    },
+    {
+      "q": "the french revolution",
+      "rank": null,
+      "top": "Th\u00e9r\u00e8se Caval"
+    },
+    {
+      "q": "black holes in space",
+      "rank": null,
+      "top": "Mar Mezcua"
+    },
+    {
+      "q": "history of the roman empire",
+      "rank": null,
+      "top": "Ancient Rome (disambiguation)"
+    },
+    {
+      "q": "dna structure and function",
+      "rank": null,
+      "top": "Lynn Zechiedrich"
+    },
+    {
+      "q": "the great depression",
+      "rank": null,
+      "top": "The Great Depression (disambiguation)"
+    },
+    {
+      "q": "plate tectonics",
+      "rank": null,
+      "top": "Dan McKenzie (geophysicist)"
+    },
+    {
+      "q": "hubble space telescope",
+      "rank": null,
+      "top": "Hubble: 15 Years of Discovery"
+    },
+    {
+      "q": "chernobyl disaster",
+      "rank": null,
+      "top": "List of Chernobyl-related articles"
+    },
+    {
+      "q": "magna carta",
+      "rank": null,
+      "top": "Magna Carta (disambiguation)"
+    },
+    {
+      "q": "battle of waterloo",
+      "rank": null,
+      "top": "Battle of Waterloo (disambiguation)"
+    },
+    {
+      "q": "periodic table of elements",
+      "rank": null,
+      "top": "Periodic table (disambiguation)"
+    }
+  ]
+}

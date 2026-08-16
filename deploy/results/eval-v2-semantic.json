@@ -1,0 +1,164 @@
+{
+  "base": "https://demowiki2.polign.com",
+  "mode": "semantic",
+  "n": 30,
+  "hit_at": {
+    "1": 8,
+    "3": 11,
+    "10": 14
+  },
+  "mrr": 0.33611111111111114,
+  "latency_p50_ms": 714.185,
+  "rows": [
+    {
+      "q": "capital of france",
+      "rank": null,
+      "top": "History of Rennes"
+    },
+    {
+      "q": "who invented the telephone",
+      "rank": 1,
+      "top": "History of the telephone"
+    },
+    {
+      "q": "what causes the seasons",
+      "rank": 1,
+      "top": "Season"
+    },
+    {
+      "q": "why is the sky blue",
+      "rank": null,
+      "top": "Skyscape art"
+    },
+    {
+      "q": "who wrote romeo and juliet",
+      "rank": null,
+      "top": "Arthur Brooke (poet)"
+    },
+    {
+      "q": "largest planet in the solar system",
+      "rank": null,
+      "top": "List of largest exoplanets"
+    },
+    {
+      "q": "what year did the berlin wall fall",
+      "rank": 1,
+      "top": "Fall of the Berlin Wall"
+    },
+    {
+      "q": "first person to walk on the moon",
+      "rank": 4,
+      "top": "First Man: The Life of Neil A. Armstrong"
+    },
+    {
+      "q": "who painted the mona lisa",
+      "rank": 4,
+      "top": "Mona Lisa replicas and reinterpretations"
+    },
+    {
+      "q": "longest river in the world",
+      "rank": null,
+      "top": "Yarlung Tsangpo"
+    },
+    {
+      "q": "what is the speed of light",
+      "rank": null,
+      "top": "List of physics mnemonics"
+    },
+    {
+      "q": "currency of japan",
+      "rank": null,
+      "top": "Financial services in Japan"
+    },
+    {
+      "q": "who discovered penicillin",
+      "rank": 2,
+      "top": "Penicillium rubens"
+    },
+    {
+      "q": "tallest mountain on earth",
+      "rank": 4,
+      "top": "Timeline of Mount Everest expeditions"
+    },
+    {
+      "q": "capital city of australia",
+      "rank": 2,
+      "top": "List of Australian capital cities"
+    },
+    {
+      "q": "theory of relativity",
+      "rank": null,
+      "top": "Light-dragging effects"
+    },
+    {
+      "q": "causes of world war one",
+      "rank": 1,
+      "top": "Causes of World War I"
+    },
+    {
+      "q": "how do volcanoes erupt",
+      "rank": null,
+      "top": "Gas slug"
+    },
+    {
+      "q": "photosynthesis in plants",
+      "rank": null,
+      "top": "Plant"
+    },
+    {
+      "q": "the french revolution",
+      "rank": null,
+      "top": "French Revolution (disambiguation)"
+    },
+    {
+      "q": "black holes in space",
+      "rank": 1,
+      "top": "Black hole"
+    },
+    {
+      "q": "history of the roman empire",
+      "rank": 1,
+      "top": "History of the Roman Empire"
+    },
+    {
+      "q": "dna structure and function",
+      "rank": null,
+      "top": "Gene structure"
+    },
+    {
+      "q": "the great depression",
+      "rank": 1,
+      "top": "Great Depression"
+    },
+    {
+      "q": "plate tectonics",
+      "rank": null,
+      "top": "John Tuzo Wilson"
+    },
+    {
+      "q": "hubble space telescope",
+      "rank": null,
+      "top": "James Webb Space Telescope"
+    },
+    {
+      "q": "chernobyl disaster",
+      "rank": 3,
+      "top": "Individual involvement in the Chernobyl disaster"
+    },
+    {
+      "q": "magna carta",
+      "rank": null,
+      "top": "Law of the land"
+    },
+    {
+      "q": "battle of waterloo",
+      "rank": 1,
+      "top": "Battle of Waterloo"
+    },
+    {
+      "q": "periodic table of elements",
+      "rank": null,
+      "top": "History of the periodic table"
+    }
+  ]
+}

@@ -1,0 +1,164 @@
+{
+  "base": "https://demowiki.polign.com",
+  "mode": "semantic",
+  "n": 30,
+  "hit_at": {
+    "1": 1,
+    "3": 3,
+    "10": 11
+  },
+  "mrr": 0.10074074074074076,
+  "latency_p50_ms": 419.426,
+  "rows": [
+    {
+      "q": "capital of france",
+      "rank": null,
+      "top": "History of Rennes"
+    },
+    {
+      "q": "who invented the telephone",
+      "rank": 3,
+      "top": "Kazuo Hashimoto"
+    },
+    {
+      "q": "what causes the seasons",
+      "rank": 8,
+      "top": "Bonder\u00f8ven"
+    },
+    {
+      "q": "why is the sky blue",
+      "rank": null,
+      "top": "Sky Blue (disambiguation)"
+    },
+    {
+      "q": "who wrote romeo and juliet",
+      "rank": null,
+      "top": "Romeo and Juliet (disambiguation)"
+    },
+    {
+      "q": "largest planet in the solar system",
+      "rank": null,
+      "top": "HD 169830 b"
+    },
+    {
+      "q": "what year did the berlin wall fall",
+      "rank": 6,
+      "top": "Tr\u00e4nenpalast"
+    },
+    {
+      "q": "first person to walk on the moon",
+      "rank": null,
+      "top": "Moonwalk"
+    },
+    {
+      "q": "who painted the mona lisa",
+      "rank": null,
+      "top": "Isleworth Mona Lisa"
+    },
+    {
+      "q": "longest river in the world",
+      "rank": null,
+      "top": "Roe River"
+    },
+    {
+      "q": "what is the speed of light",
+      "rank": null,
+      "top": "List of physics mnemonics"
+    },
+    {
+      "q": "currency of japan",
+      "rank": null,
+      "top": "Financial services in Japan"
+    },
+    {
+      "q": "who discovered penicillin",
+      "rank": 2,
+      "top": "Norman Heatley"
+    },
+    {
+      "q": "tallest mountain on earth",
+      "rank": 8,
+      "top": "Denali"
+    },
+    {
+      "q": "capital city of australia",
+      "rank": 1,
+      "top": "Canberra"
+    },
+    {
+      "q": "theory of relativity",
+      "rank": 4,
+      "top": "Alternatives to general relativity"
+    },
+    {
+      "q": "causes of world war one",
+      "rank": 5,
+      "top": "Hermann Lutz"
+    },
+    {
+      "q": "how do volcanoes erupt",
+      "rank": 9,
+      "top": "Olca-Paruma"
+    },
+    {
+      "q": "photosynthesis in plants",
+      "rank": null,
+      "top": "Plant"
+    },
+    {
+      "q": "the french revolution",
+      "rank": null,
+      "top": "Club de l'h\u00f4tel de Massiac"
+    },
+    {
+      "q": "black holes in space",
+      "rank": null,
+      "top": "Black holes in fiction"
+    },
+    {
+      "q": "history of the roman empire",
+      "rank": 10,
+      "top": "History of Rome (disambiguation)"
+    },
+    {
+      "q": "dna structure and function",
+      "rank": null,
+      "top": "Base pair"
+    },
+    {
+      "q": "the great depression",
+      "rank": null,
+      "top": "The Great Depression (disambiguation)"
+    },
+    {
+      "q": "plate tectonics",
+      "rank": null,
+      "top": "Geodynamics of terrestrial exoplanets"
+    },
+    {
+      "q": "hubble space telescope",
+      "rank": null,
+      "top": "Arthur Code"
+    },
+    {
+      "q": "chernobyl disaster",
+      "rank": null,
+      "top": "List of Chernobyl-related articles"
+    },
+    {
+      "q": "magna carta",
+      "rank": null,
+      "top": "Magna Carta (disambiguation)"
+    },
+    {
+      "q": "battle of waterloo",
+      "rank": 9,
+      "top": "Battle of Waterloo (disambiguation)"
+    },
+    {
+      "q": "periodic table of elements",
+      "rank": null,
+      "top": "Periodic table (disambiguation)"
+    }
+  ]
+}

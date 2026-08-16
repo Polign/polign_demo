@@ -5,7 +5,10 @@
 # The DNS record must be DNS-only (grey cloud on Cloudflare), or the HTTP-01
 # challenge cannot reach Caddy.
 
-demowiki2.polign.com {
+# Both names serve the same site. demo.polign.com is the public entry point;
+# demowiki2.polign.com stays valid so links handed out during the build keep
+# working, and so a future cutover has a name to stage against.
+demo.polign.com, demowiki2.polign.com {
 	encode zstd gzip
 
 	# The app reads the leftmost X-Forwarded-For hop for its per-client rate

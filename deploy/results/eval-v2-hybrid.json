@@ -1,0 +1,164 @@
+{
+  "base": "https://demowiki2.polign.com",
+  "mode": "hybrid",
+  "n": 30,
+  "hit_at": {
+    "1": 2,
+    "3": 8,
+    "10": 13
+  },
+  "mrr": 0.1675925925925926,
+  "latency_p50_ms": 8607.0255,
+  "rows": [
+    {
+      "q": "capital of france",
+      "rank": null,
+      "top": "Libraries in Paris"
+    },
+    {
+      "q": "who invented the telephone",
+      "rank": 6,
+      "top": "Douglas H. Ring"
+    },
+    {
+      "q": "what causes the seasons",
+      "rank": 3,
+      "top": "R\u016baumoko"
+    },
+    {
+      "q": "why is the sky blue",
+      "rank": null,
+      "top": "Sky blue"
+    },
+    {
+      "q": "who wrote romeo and juliet",
+      "rank": null,
+      "top": "Arthur Brooke (poet)"
+    },
+    {
+      "q": "largest planet in the solar system",
+      "rank": null,
+      "top": "Outline of Neptune"
+    },
+    {
+      "q": "what year did the berlin wall fall",
+      "rank": 3,
+      "top": "Fall of the inner German border"
+    },
+    {
+      "q": "first person to walk on the moon",
+      "rank": null,
+      "top": "Alan Shepard"
+    },
+    {
+      "q": "who painted the mona lisa",
+      "rank": null,
+      "top": "Mona Lisa (Prado)"
+    },
+    {
+      "q": "longest river in the world",
+      "rank": null,
+      "top": "Yarlung Tsangpo"
+    },
+    {
+      "q": "what is the speed of light",
+      "rank": null,
+      "top": "One-way speed of light"
+    },
+    {
+      "q": "currency of japan",
+      "rank": null,
+      "top": "Financial services in Japan"
+    },
+    {
+      "q": "who discovered penicillin",
+      "rank": 9,
+      "top": "Norman Heatley"
+    },
+    {
+      "q": "tallest mountain on earth",
+      "rank": 8,
+      "top": "Denali"
+    },
+    {
+      "q": "capital city of australia",
+      "rank": 1,
+      "top": "Canberra"
+    },
+    {
+      "q": "theory of relativity",
+      "rank": 1,
+      "top": "Introduction to general relativity"
+    },
+    {
+      "q": "causes of world war one",
+      "rank": 2,
+      "top": "Hermann Lutz"
+    },
+    {
+      "q": "how do volcanoes erupt",
+      "rank": null,
+      "top": "Mountain formation"
+    },
+    {
+      "q": "photosynthesis in plants",
+      "rank": null,
+      "top": "Photosynthetic efficiency"
+    },
+    {
+      "q": "the french revolution",
+      "rank": null,
+      "top": "The Old Regime and the Revolution"
+    },
+    {
+      "q": "black holes in space",
+      "rank": 2,
+      "top": "Abell 400"
+    },
+    {
+      "q": "history of the roman empire",
+      "rank": 3,
+      "top": "Ancient Rome (disambiguation)"
+    },
+    {
+      "q": "dna structure and function",
+      "rank": null,
+      "top": "CTCF"
+    },
+    {
+      "q": "the great depression",
+      "rank": 6,
+      "top": "Second Great Depression"
+    },
+    {
+      "q": "plate tectonics",
+      "rank": null,
+      "top": "Geodynamics of terrestrial exoplanets"
+    },
+    {
+      "q": "hubble space telescope",
+      "rank": null,
+      "top": "Fine Guidance Sensor (HST)"
+    },
+    {
+      "q": "chernobyl disaster",
+      "rank": 8,
+      "top": "List of Chernobyl-related articles"
+    },
+    {
+      "q": "magna carta",
+      "rank": null,
+      "top": "William Hardell"
+    },
+    {
+      "q": "battle of waterloo",
+      "rank": 3,
+      "top": "Hans Ernst Karl, Graf von Zieten"
+    },
+    {
+      "q": "periodic table of elements",
+      "rank": null,
+      "top": "Extended periodic table"
+    }
+  ]
+}

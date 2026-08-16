@@ -26,29 +26,44 @@ Group=polign
 # passage count. GOMEMLIMIT drops accordingly: the 129 MB resident matrix that
 # forced 400 MiB on the v1 host is simply not here.
 #
+# -nprobe 8: measured, not assumed. Quality is flat from nprobe 8 to 64 on the
+# 30-query evaluation set (MRR 0.336 at every value), so IVF recall is not what
+# limits this demo — the embedder is. 8 is therefore the cheapest setting that
+# costs nothing in quality. Raise it only if a measurement says recall binds.
+#
 # -nprobe: cells probed per cold query, the dominant latency knob. At 384 dims a
 # cell of ~3,500 vectors is ~5.4 MB against v1's ~11 MB at 512 dims, and
 # compaction packed co-probed cells into shared objects, so a probe set costs
 # far fewer round trips than the per-cell GETs v1 paid. That is what buys the
 # higher probe count here: v1 was pinned at 4 and measurably missed top hits.
 #
-# -modes semantic: unchanged from v1, and for the same measured reason. The BM25
-# legs read every lexical segment per query (~10 GB at this corpus size), which
-# OOM-kills a 2 GB node. Re-enable once segindex.SearchText fetches only the
-# postings a query's terms need.
+# -modes: all three are affordable now. The BM25 legs used to read every lexical
+# segment per query — ~10 GB at this corpus size, a measured OOM on this 2 GB
+# node — which is why v1 served semantic only. The lexical index now supports
+# ranged reads (postings by term rather than whole segments), so a text query
+# reads its terms: measured 294 MB peak RSS against the OOM it used to cause.
+#
+# Semantic is listed first because the first entry is the default, and it is the
+# best of the three here by measurement, not by assumption: on the 30-query
+# evaluation set semantic scores MRR 0.336, hybrid 0.168 and keyword 0.024. BM25
+# surfaces disambiguation and list pages (short, dense in the query terms) since
+# this analyzer has no stop-word handling and there is no title-field weighting,
+# so reciprocal-rank fusion pulls the good semantic ranking toward the poor
+# lexical one. Keyword and hybrid stay selectable for comparison; title-weighted
+# BM25 is the work that would make hybrid the right default.
+#
 Environment=GOMEMLIMIT=200MiB
 ExecStart=/opt/polign/bin/polign-demo \
     -public \
-    -modes semantic \
+    -modes semantic,keyword,hybrid \
     -http 127.0.0.1:23100 \
     -node http://127.0.0.1:23000 \
     -embed-addr http://127.0.0.1:23200 \
     -embed-dim 384 \
     -dir /opt/polign/data \
     -collection wikipedia_bge \
-    -nprobe 16 \
-    -k 8 \
-    -notice "This index is still being built — searches run against the passages loaded so far, and coverage grows through the day. A missing article usually means it has not landed yet."
+    -nprobe 8 \
+    -k 8
 
 Restart=always
 RestartSec=5s
