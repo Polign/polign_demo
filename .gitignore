@@ -10,3 +10,6 @@
 /polign-server
 /polign-maintain
 /bin/
+
+# macOS Finder metadata
+.DS_Store
