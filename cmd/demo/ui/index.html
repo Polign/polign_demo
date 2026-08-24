@@ -5,119 +5,165 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>polign_db demo — semantic, keyword, and hybrid search</title>
 <meta name="description" content="Live demo of polign_db: search all of English Wikipedia by meaning (vector), by keyword (BM25), or both fused in one query — served cold from object storage on a 2 GB node." />
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%230F766E'/%3E%3Cstop offset='1' stop-color='%2314B8A6'/%3E%3C/linearGradient%3E%3Cmask id='m'%3E%3Crect width='32' height='32' fill='%23fff'/%3E%3Crect x='18.6' y='2.6' width='8.4' height='8.4' fill='%23000'/%3E%3C/mask%3E%3C/defs%3E%3Cpath mask='url(%23m)' fill='url(%23g)' fill-rule='evenodd' d='M9.5 27.5V4.5h9a9 9 0 0 1 0 18H14v5zM14 17.5h4.3a4 4 0 0 0 0-8H14z'/%3E%3Crect x='21' y='3.6' width='5.2' height='5.2' rx='1.6' fill='%232DD4BF'/%3E%3C/svg%3E" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%230B0F14'/%3E%3Cstop offset='1' stop-color='%231C2530'/%3E%3C/linearGradient%3E%3Cmask id='m'%3E%3Crect width='32' height='32' fill='%23fff'/%3E%3Crect x='18.6' y='2.6' width='8.4' height='8.4' fill='%23000'/%3E%3C/mask%3E%3C/defs%3E%3Cpath mask='url(%23m)' fill='url(%23g)' fill-rule='evenodd' d='M9.5 27.5V4.5h9a9 9 0 0 1 0 18H14v5zM14 17.5h4.3a4 4 0 0 0 0-8H14z'/%3E%3Crect x='21' y='3.6' width='5.2' height='5.2' rx='1.6' fill='%2372F1B8'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,300..800&family=Google+Sans+Code:wght@400;500&display=swap" />
 <style>
 :root {
-  --bg: #fcfdff; --panel: #ffffff; --ink: #0f172a; --muted: #5b6474;
-  --line: #e5e9f0; --teal: #0f766e; --teal2: #14b8a6; --mark: #fef3c7;
-  --chip: #f1f5f9; --shadow: 0 1px 3px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.05);
+  --ink: #0B0F14; --ink-2: #06090D; --ink-3: #1C2530;
+  --mint: #72F1B8; --sage: #A9B4C0; --sage-dim: #6F7B88;
+  --accent: #0B7A55;
+  --bg: #FFFFFF; --bg-elev: #FFFFFF; --bg-elev-2: #F6F7F9; --bg-code: #F1F3F6;
+  --border: #E6E8EC; --border-strong: #D5D9E0;
+  --text: #0B0F14; --text-body: #2A313B; --text-muted: #5F6B7A; --text-dim: #98A2AE;
+  --ring: rgba(11, 122, 85, 0.25);
+  --mark: rgba(11, 122, 85, 0.13);
+  --err: #B42318;
+  --font: "Google Sans Flex", "Google Sans", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: "Google Sans Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f172a; --panel: #16213a; --ink: #e6eaf2; --muted: #94a1b8;
-    --line: #263450; --teal: #14b8a6; --teal2: #2dd4bf; --mark: #4a3f13;
-    --chip: #1d2a47; --shadow: 0 1px 3px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.25);
+    --accent: #72F1B8;
+    --bg: #0B0F14; --bg-elev: #12171E; --bg-elev-2: #171D25; --bg-code: #080B0F;
+    --border: #222A34; --border-strong: #2E3845;
+    --text: #F2F4F7; --text-body: #D3D9E0; --text-muted: #A9B4C0; --text-dim: #6F7B88;
+    --ring: rgba(114, 241, 184, 0.3);
+    --mark: rgba(114, 241, 184, 0.18);
+    --err: #f87171;
   }
 }
 * { box-sizing: border-box; margin: 0; }
 body {
-  background: var(--bg); color: var(--ink);
-  font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  background: var(--bg); color: var(--text);
+  font-family: var(--font); font-size: 16px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
 }
-a { color: var(--teal); text-decoration: none; }
-a:hover { text-decoration: underline; }
-.wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 60px; }
-header { display: flex; align-items: center; gap: 12px; margin-bottom: 26px; }
-header svg { width: 34px; height: 34px; flex: none; }
-header .name { font-weight: 700; font-size: 18px; }
-header .name span { background: linear-gradient(90deg, var(--teal), var(--teal2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-header nav { margin-left: auto; display: flex; gap: 18px; font-size: 14px; color: var(--muted); }
-h1 { font-size: clamp(22px, 4vw, 30px); line-height: 1.25; letter-spacing: -.01em; }
-.lead { color: var(--muted); margin: 8px 0 22px; max-width: 62ch; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+::selection { background: rgba(114, 241, 184, 0.35); }
+
+/* dark ink top bar, same as the site chrome */
+.topnav {
+  display: flex; align-items: center; gap: 24px;
+  height: 64px; padding: 0 max(24px, calc((100% - 1040px) / 2));
+  background: var(--ink); color: #fff;
+}
+.topnav .brand {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-weight: 500; font-size: 1.15rem; color: #fff; letter-spacing: -0.01em;
+}
+.topnav .brand:hover { text-decoration: none; }
+.topnav .brand svg { width: 26px; height: 26px; display: block; }
+.topnav .brand small { color: var(--sage-dim); font-weight: 400; font-size: 0.85rem; margin-left: 2px; }
+.topnav nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.topnav nav a {
+  color: var(--sage); font-weight: 450; font-size: 0.9rem;
+  padding: 8px 12px; border-radius: 999px; white-space: nowrap; transition: color 0.15s;
+}
+.topnav nav a:hover { color: #fff; text-decoration: none; }
+
+.wrap { max-width: 1040px; margin: 0 auto; padding: 44px 24px 70px; }
+h1 { font-weight: 400; font-size: clamp(26px, 4vw, 38px); line-height: 1.15; letter-spacing: -0.015em; }
+.lead { color: var(--text-muted); font-size: 1.05rem; margin: 12px 0 28px; max-width: 62ch; }
+
 .searchrow { display: flex; gap: 10px; }
 #q {
-  flex: 1; font: inherit; color: var(--ink); background: var(--panel);
-  border: 1.5px solid var(--line); border-radius: 12px; padding: 13px 16px; outline: none;
+  flex: 1; font: inherit; color: var(--text); background: var(--bg-elev);
+  border: 1px solid var(--border-strong); border-radius: 999px; padding: 0 20px; height: 48px; outline: none;
 }
-#q:focus { border-color: var(--teal2); box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal2) 22%, transparent); }
+#q::placeholder { color: var(--text-dim); }
+#q:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
 #go {
-  font: inherit; font-weight: 600; color: #fff; border: 0; border-radius: 12px; padding: 0 22px;
-  background: linear-gradient(90deg, var(--teal), var(--teal2)); cursor: pointer;
+  font: inherit; font-weight: 500; font-size: 1rem; line-height: 1;
+  height: 48px; padding: 0 24px; border: 1px solid transparent; border-radius: 999px;
+  background: var(--text); color: var(--bg); cursor: pointer;
+  transition: opacity 0.15s; white-space: nowrap;
 }
-#go:active { transform: translateY(1px); }
-.modes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0 6px; }
-.modes .seg {
-  display: inline-flex; border: 1.5px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel);
-}
+#go:hover { opacity: 0.8; }
+
+.modes { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 22px 0 0; border-bottom: 1px solid var(--border); }
+.seg { display: flex; gap: 2px; }
 .seg button {
-  font: inherit; font-size: 14px; padding: 7px 14px; border: 0; background: transparent;
-  color: var(--muted); cursor: pointer; white-space: nowrap;
+  appearance: none; background: none; border: 0; cursor: pointer;
+  font: inherit; font-size: 0.9rem; font-weight: 500; color: var(--text-muted);
+  padding: 8px 14px; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap;
 }
-.seg button + button { border-left: 1.5px solid var(--line); }
-.seg button.on { background: color-mix(in srgb, var(--teal2) 14%, transparent); color: var(--teal); font-weight: 600; }
-.modehint { font-size: 13.5px; color: var(--muted); margin-left: 2px; }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 4px; }
+.seg button:hover { color: var(--text); }
+.seg button.on { color: var(--text); border-bottom-color: var(--text); }
+.modehint { font-size: 0.85rem; color: var(--text-dim); padding-bottom: 8px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 4px; }
 .chips button {
-  font: inherit; font-size: 13.5px; color: var(--ink); background: var(--chip);
-  border: 1px solid var(--line); border-radius: 999px; padding: 5px 13px; cursor: pointer;
+  font: inherit; font-size: 0.85rem; color: var(--text-body); background: transparent;
+  border: 1px solid var(--border-strong); border-radius: 999px; padding: 6px 15px; cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
 }
-.chips button:hover { border-color: var(--teal2); }
+.chips button:hover { border-color: var(--text); color: var(--text); }
+
 #notice {
   display: flex; gap: 9px; align-items: flex-start;
-  font-size: 13.5px; line-height: 1.5; color: var(--ink);
-  background: var(--chip); border: 1px solid var(--line);
-  border-radius: 10px; padding: 10px 13px; margin: 16px 0 2px;
+  font-size: 0.88rem; line-height: 1.5; color: var(--text-body);
+  background: var(--bg-elev-2); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 12px; padding: 11px 14px; margin: 16px 0 2px;
 }
-#notice::before {
-  content: ""; flex: none; width: 7px; height: 7px; margin-top: 7px;
-  border-radius: 50%; background: var(--teal2);
-}
-.status { min-height: 22px; font-size: 13.5px; color: var(--muted); margin: 14px 0 6px; }
-.status b { color: var(--ink); }
+#notice[hidden] { display: none; }
+
+.status { min-height: 22px; font-size: 0.88rem; color: var(--text-muted); margin: 16px 0 8px; }
+.status b { color: var(--text); font-weight: 550; }
+
 .card {
-  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-  padding: 15px 17px; margin-bottom: 12px; box-shadow: var(--shadow);
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px;
+  padding: 15px 17px; margin-bottom: 10px;
 }
 .card .top { display: flex; align-items: baseline; gap: 10px; }
-.card .rank { color: var(--muted); font-size: 13px; min-width: 1.4em; }
-.card .title { font-weight: 650; }
+.card .rank { color: var(--text-dim); font-size: 0.82rem; font-family: var(--mono); min-width: 1.6em; }
+.card .title { font-weight: 500; color: var(--text); }
 .card .score {
-  margin-left: auto; flex: none; font-size: 12.5px; font-variant-numeric: tabular-nums;
-  color: var(--teal); background: color-mix(in srgb, var(--teal2) 12%, transparent);
-  border-radius: 999px; padding: 2px 10px;
+  margin-left: auto; flex: none; font-family: var(--mono); font-size: 0.78rem;
+  color: var(--accent);
 }
-.card .text { font-size: 14.5px; color: var(--muted); margin-top: 6px; }
+.card .text { font-size: 0.92rem; color: var(--text-muted); margin-top: 6px; }
 .card .text mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1px; }
 .card .xranks { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
-.xrank { font-size: 11.5px; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 1px 8px; }
-.xrank.hit { color: var(--teal); border-color: color-mix(in srgb, var(--teal2) 45%, transparent); }
-.compare { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-.compare h3 { font-size: 14px; margin: 2px 0 10px; }
-.compare h3 small { color: var(--muted); font-weight: 400; }
+.xrank { font-family: var(--mono); font-size: 0.72rem; border: 1px solid var(--border); color: var(--text-dim); border-radius: 6px; padding: 1px 8px; }
+.xrank.hit { color: var(--accent); border-color: var(--accent); }
+
+.compare { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.compare > div { border-top: 1px solid var(--border-strong); padding-top: 12px; }
+.compare h3 { font-weight: 500; font-size: 0.95rem; margin: 0 0 10px; }
+.compare h3 small { color: var(--text-dim); font-weight: 400; font-size: 0.8rem; }
 .compare .card { padding: 11px 13px; }
 .compare .card .text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 @media (max-width: 860px) { .compare { grid-template-columns: 1fr; } }
-footer { margin-top: 40px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; }
-footer code { background: var(--chip); border-radius: 6px; padding: 2px 6px; font-size: 12px; }
-.err { color: #c73a68; }
+
+footer { margin-top: 56px; font-size: 0.85rem; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 20px; }
+footer code {
+  font-family: var(--mono); font-size: 0.8rem; color: var(--text);
+  background: var(--bg-code); border-radius: 6px; padding: 2px 7px;
+}
+.err { color: var(--err); }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
+<header class="topnav">
+  <a class="brand" href="https://polign.com">
     <svg viewBox="0 0 32 32" aria-hidden="true">
-      <defs><linearGradient id="plg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0F766E"/><stop offset="1" stop-color="#14B8A6"/></linearGradient>
-      <mask id="plgm"><rect width="32" height="32" fill="#fff"/><rect x="18.6" y="2.6" width="8.4" height="8.4" fill="#000"/></mask></defs>
-      <path mask="url(#plgm)" fill="url(#plg)" fill-rule="evenodd" d="M9.5 27.5V4.5h9a9 9 0 0 1 0 18H14v5zM14 17.5h4.3a4 4 0 0 0 0-8H14z"/>
-      <rect x="21" y="3.6" width="5.2" height="5.2" rx="1.6" fill="#2DD4BF"/>
+      <defs><mask id="plgm"><rect width="32" height="32" fill="#fff"/><rect x="18.6" y="2.6" width="8.4" height="8.4" fill="#000"/></mask></defs>
+      <path mask="url(#plgm)" fill="currentColor" fill-rule="evenodd" d="M9.5 27.5V4.5h9a9 9 0 0 1 0 18H14v5zM14 17.5h4.3a4 4 0 0 0 0-8H14z"/>
+      <rect x="21" y="3.6" width="5.2" height="5.2" rx="1.6" fill="#72F1B8"/>
     </svg>
-    <div class="name">polign_db <span>live demo</span></div>
-    <nav>
-      <a href="https://polign.com">polign.com</a>
-      <a href="https://github.com/Polign/polign">GitHub</a>
-    </nav>
-  </header>
+    Polign <small>live demo</small>
+  </a>
+  <nav>
+    <a href="https://polign.com">polign.com</a>
+    <a href="https://github.com/Polign/polign">GitHub</a>
+  </nav>
+</header>
 
+<div class="wrap">
   <h1>Search <span id="corpus">all of</span> Wikipedia three ways.</h1>
   <p class="lead">Every passage of English Wikipedia, on a 2&nbsp;GB node that holds none of it in memory.
     Each search is a cold read from object storage — semantic, keyword, or both fused into one query.
@@ -140,7 +186,7 @@ footer code { background: var(--chip); border-radius: 6px; padding: 2px 6px; fon
   <footer>
     <p><span id="embedclaim">Queries are embedded on this host — no external model API, no GPU.</span>
     The same search is one HTTP call: <code id="curl">curl 'https://demo.polign.com/demo/search?q=…&amp;mode=hybrid'</code></p>
-    <p style="margin-top:6px">Text: <a href="https://en.wikipedia.org">English Wikipedia</a> (CC BY-SA 4.0) ·
+    <p style="margin-top:8px">Text: <a href="https://en.wikipedia.org">English Wikipedia</a> (CC BY-SA 4.0) ·
     Embeddings: <a id="modellink" href="https://huggingface.co">model</a> ·
     Engine: <a href="https://github.com/Polign/polign">polign_db</a></p>
   </footer>
