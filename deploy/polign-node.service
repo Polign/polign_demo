@@ -20,9 +20,14 @@ Group=polign
 #   demo app           ~30 MiB (it no longer loads any model of its own)
 #
 # on a 2 GB box. The disk cache is what keeps the node's RSS flat as the corpus
-# grows: cells land on local disk, not in the heap.
+# grows: cells land on local disk, not in the heap. The 256 MiB segment cache in
+# front of it absorbs the repeat reads that never reach disk at all.
+#
+# Put AWS_REGION in the same region as the bucket. A store in another region
+# still answers, it just pays a cross-region round trip on every cold cell, and
+# the cold path is the whole point of this deployment.
 Environment=GOMEMLIMIT=1000MiB
-Environment=AWS_REGION=us-east-1
+Environment=AWS_REGION=REPLACE_REGION
 ExecStart=/opt/polign/bin/polign-server \
     -store s3://REPLACE_BUCKET/polign \
     -restore-stores "" \
@@ -35,6 +40,7 @@ ExecStart=/opt/polign/bin/polign-server \
     -grpc 127.0.0.1:23001 \
     -disk-cache-dir /var/lib/polign/disk-cache \
     -disk-cache-bytes 6442450944 \
+    -segment-cache-bytes 268435456 \
     -segment-refresh 5m \
     -hedge-reads 150ms
 

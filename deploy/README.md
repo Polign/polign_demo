@@ -16,14 +16,17 @@ terminated when it is done; that is the point of paying for a big one.
 
 ```sh
 BUCKET=your-bucket-name
-aws s3 mb "s3://$BUCKET" --region us-east-1
+REGION=us-west-1
+aws s3 mb "s3://$BUCKET" --region "$REGION"
 aws s3api put-public-access-block --bucket "$BUCKET" \
     --public-access-block-configuration \
     "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
 ```
 
 The bucket stays private. Both hosts reach it with an instance profile, never
-with keys on disk.
+with keys on disk. Put both hosts in the same region as the bucket: every cold
+query is an object-store read, so a cross-region store adds a round trip to the
+one path this deployment exists to show off.
 
 ## 2. Build host
 
@@ -109,7 +112,8 @@ sudo /opt/polign/venv/bin/pip install -q onnxruntime transformers numpy
 sudo chown -R polign:polign /opt/polign
 
 sudo cp deploy/*.service /etc/systemd/system/
-sudo sed -i "s/REPLACE_BUCKET/$BUCKET/" /etc/systemd/system/polign-node.service
+sudo sed -i -e "s/REPLACE_BUCKET/$BUCKET/" -e "s/REPLACE_REGION/$REGION/" \
+    /etc/systemd/system/polign-node.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now polign-node polign-embedserve polign-demo
 

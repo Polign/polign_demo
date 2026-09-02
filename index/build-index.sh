@@ -68,7 +68,7 @@ IMPORT_BATCH=${IMPORT_BATCH:-400000}
 # correlated with content -- Wikipedia's parquet ordering is by article id, which
 # is close enough to arbitrary.
 TRAIN_SAMPLE=${TRAIN_SAMPLE:-250000}
-export AWS_REGION=${AWS_REGION:-us-east-1}
+export AWS_REGION=${AWS_REGION:-us-west-1}
 
 mkdir -p "$WORK" "$LOGS"
 shards=$(ls "$DATA"/passages-*.jsonl | sort)
