@@ -1,0 +1,22 @@
+{
+  "server_release": "0.5.0",
+  "source_commit": "7b4f677",
+  "dataset": "wikimedia/wikipedia 20231101.en",
+  "model": "BAAI/bge-small-en-v1.5",
+  "region": "us-west-1",
+  "bucket": "polign-demo-wiki-en-uw1",
+  "prefix": "polign-v4",
+  "collection": "wikipedia_bge",
+  "generation": 45,
+  "manifest_sha256": "641898809239f916a94b564f56403971e8ab85fc36101af4590a5f55e3eab683",
+  "vectors": 12519135,
+  "dimension": 384,
+  "metric": "l2",
+  "nlist": 3538,
+  "pq": null,
+  "id_filters": false,
+  "model_sha256": "382177138e470f40c9c47225cd8adf34b039c98825c35c99501e2da699204929",
+  "release_archive_sha256": "df73cf9d51603240e95b676d077a9a8311349c27f3b8d809e76f4939fab77216",
+  "instrumented_binary_sha256": "d19814b0b3e432acb959084e025b254cd61eb53427331c940701afa8d572ef54",
+  "telemetry_patch_sha256": "f1826ac97d6b6803eb1fb9c0e5dadb40bac5d37cbac886c853b8e9481b4849c9"
+}

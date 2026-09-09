@@ -1,0 +1,25 @@
+{
+  "seed": 20260906,
+  "source": "https://github.com/google-research-datasets/natural-questions/tree/master/nq_open",
+  "metric": "answer-containing passage retrieval; token-bounded case-insensitive matching",
+  "query_prefix": "Represent this sentence for searching relevant passages: ",
+  "model_sha256": "382177138e470f40c9c47225cd8adf34b039c98825c35c99501e2da699204929",
+  "sets": {
+    "quality": {
+      "count": 300,
+      "sha256": "76d07da955b2be2ea07b00444f4deb83065b62c962ff8d0b368e9303ce7c5168"
+    },
+    "tuning": {
+      "count": 100,
+      "sha256": "08b0214b44deb4f2a0888ffa1e7f5b118de7d44f4061cf2090474cdf080dc279"
+    },
+    "load": {
+      "count": 10000,
+      "sha256": "85bb7c1e1dafa85482cc1578d6dee122a8c1a1676601d14cbf889e13e7afc6e3"
+    },
+    "regression": {
+      "count": 30,
+      "sha256": "6479852d82ae6b9897caa5d2fa39fc7a9d9d5e646071f0607866d69b12954b65"
+    }
+  }
+}

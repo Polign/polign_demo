@@ -10,6 +10,10 @@
 /polign-server
 /polign-maintain
 /bin/
+/bench/wikipedia/artifacts/
+/bench/wikipedia/runs/
+/bench/wikipedia/fixtures/*.vectors.jsonl
+__pycache__/
 
 # macOS Finder metadata
 .DS_Store

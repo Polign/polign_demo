@@ -1,0 +1,233 @@
+diff --git a/internal/objectstore/hedged.go b/internal/objectstore/hedged.go
+index 015df1b..d2f6b45 100644
+--- a/internal/objectstore/hedged.go
++++ b/internal/objectstore/hedged.go
+@@ -84,6 +84,7 @@ func hedge(ctx context.Context, delay time.Duration, fetch func(context.Context)
+ 			}
+ 		case <-timer.C:
+ 			if !hedged {
++				benchReads.hedges.Add(1)
+ 				launch()
+ 				pending++
+ 				hedged = true
+diff --git a/internal/objectstore/s3.go b/internal/objectstore/s3.go
+index f53776b..034f835 100644
+--- a/internal/objectstore/s3.go
++++ b/internal/objectstore/s3.go
+@@ -101,7 +101,7 @@ func NewS3StoreAs(ctx context.Context, bucket, prefix string, creds Credentials)
+ 		t.MaxIdleConns = maxConns
+ 		t.MaxIdleConnsPerHost = maxConns
+ 	})
+-	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithHTTPClient(httpClient))
++	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithHTTPClient(clientWithReadTelemetry(httpClient)))
+ 	if err != nil {
+ 		return nil, fmt.Errorf("objectstore: load aws config: %w", err)
+ 	}
+diff --git a/internal/transport/adminserver/adminserver.go b/internal/transport/adminserver/adminserver.go
+index a6bc4c8..6eb662d 100644
+--- a/internal/transport/adminserver/adminserver.go
++++ b/internal/transport/adminserver/adminserver.go
+@@ -27,6 +27,7 @@ import (
+ 	"encoding/json"
+ 	"io/fs"
+ 	"net/http"
++	"runtime"
+ 	"sort"
+ 	"time"
+ 
+@@ -99,6 +100,12 @@ func NewHandler(svc *service.Service, opts ...Option) http.Handler {
+ 	}
+ 
+ 	mux := http.NewServeMux()
++	mux.HandleFunc("GET /api/benchmark-metrics", func(w http.ResponseWriter, r *http.Request) {
++		var m runtime.MemStats
++		runtime.ReadMemStats(&m)
++		w.Header().Set("Content-Type", "application/json")
++		_ = json.NewEncoder(w).Encode(map[string]any{"time": time.Now().UTC(), "s3": objectstore.BenchmarkReadMetrics(), "go": map[string]any{"heap_alloc": m.HeapAlloc, "heap_inuse": m.HeapInuse, "heap_sys": m.HeapSys, "sys": m.Sys, "total_alloc": m.TotalAlloc, "num_gc": m.NumGC, "pause_total_ns": m.PauseTotalNs, "gc_cpu_fraction": m.GCCPUFraction, "goroutines": runtime.NumGoroutine(), "gomaxprocs": runtime.GOMAXPROCS(0)}})
++	})
+ 	mux.HandleFunc("GET /api/overview", s.handleOverview)
+ 	mux.HandleFunc("GET /api/collections", s.handleCollections)
+ 	mux.HandleFunc("GET /api/tiers", s.handleTiers)
+diff --git a/internal/objectstore/benchmark_metrics.go b/internal/objectstore/benchmark_metrics.go
+new file mode 100644
+index 0000000..35baef9
+--- /dev/null
++++ b/internal/objectstore/benchmark_metrics.go
+@@ -0,0 +1,131 @@
++package objectstore
++
++import (
++	"context"
++	"errors"
++	"io"
++	"net/http"
++	"os"
++	"strconv"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"time"
++)
++
++// Benchmark instrumentation is opt-in and contains no object names or headers.
++// It wraps the AWS HTTP client below retries and read hedging.
++var benchReads struct {
++	attempts  atomic.Int64
++	ranges    atomic.Int64
++	heads     atomic.Int64
++	lists     atomic.Int64
++	failures  atomic.Int64
++	canceled  atomic.Int64
++	retries   atomic.Int64
++	hedges    atomic.Int64
++	mutations atomic.Int64
++	bytes     atomic.Int64
++	inflight  atomic.Int64
++	totalNS   atomic.Int64
++	buckets   [9]atomic.Int64
++}
++
++type benchHTTP interface {
++	Do(*http.Request) (*http.Response, error)
++}
++type measuredHTTP struct{ inner benchHTTP }
++
++func clientWithReadTelemetry(inner benchHTTP) benchHTTP {
++	if os.Getenv("POLIGN_BENCH_TELEMETRY") != "1" {
++		return inner
++	}
++	return measuredHTTP{inner}
++}
++func (m measuredHTTP) Do(req *http.Request) (*http.Response, error) {
++	// The AWS SDK also uses this client for IMDS credential acquisition.
++	// Its token PUT is not a bucket mutation and must not be intercepted.
++	host := req.URL.Hostname()
++	if !strings.Contains(host, ".s3.") && !strings.HasPrefix(host, "s3.") && !strings.Contains(host, ".s3-") {
++		return m.inner.Do(req)
++	}
++	if req.Method != http.MethodGet && req.Method != http.MethodHead {
++		benchReads.mutations.Add(1)
++		return nil, errors.New("benchmark read-only transport blocked mutation")
++	}
++	benchReads.attempts.Add(1)
++	for _, field := range strings.Split(req.Header.Get("Amz-Sdk-Request"), ";") {
++		if value, ok := strings.CutPrefix(strings.TrimSpace(field), "attempt="); ok {
++			if n, _ := strconv.Atoi(value); n > 1 {
++				benchReads.retries.Add(1)
++			}
++		}
++	}
++	if req.Header.Get("Range") != "" {
++		benchReads.ranges.Add(1)
++	}
++	if req.Method == http.MethodHead {
++		benchReads.heads.Add(1)
++	}
++	if req.URL.Query().Get("list-type") != "" {
++		benchReads.lists.Add(1)
++	}
++	started := time.Now()
++	benchReads.inflight.Add(1)
++	response, err := m.inner.Do(req)
++	finish := func() {
++		elapsed := time.Since(started)
++		benchReads.totalNS.Add(int64(elapsed))
++		benchReads.inflight.Add(-1)
++		bounds := []time.Duration{5 * time.Millisecond, 10 * time.Millisecond, 25 * time.Millisecond, 50 * time.Millisecond, 100 * time.Millisecond, 250 * time.Millisecond, 500 * time.Millisecond, time.Second}
++		b := len(bounds)
++		for i, bound := range bounds {
++			if elapsed <= bound {
++				b = i
++				break
++			}
++		}
++		benchReads.buckets[b].Add(1)
++	}
++	if err != nil {
++		if errors.Is(err, context.Canceled) {
++			benchReads.canceled.Add(1)
++		} else {
++			benchReads.failures.Add(1)
++		}
++		finish()
++		return response, err
++	}
++	if response.StatusCode >= 400 {
++		benchReads.failures.Add(1)
++	}
++	if response.Body == nil {
++		finish()
++	} else {
++		response.Body = &measuredBody{ReadCloser: response.Body, finish: finish}
++	}
++	return response, nil
++}
++
++type measuredBody struct {
++	io.ReadCloser
++	once   sync.Once
++	finish func()
++}
++
++func (m *measuredBody) Read(p []byte) (int, error) {
++	n, e := m.ReadCloser.Read(p)
++	benchReads.bytes.Add(int64(n))
++	if e == io.EOF {
++		m.once.Do(m.finish)
++	}
++	return n, e
++}
++func (m *measuredBody) Close() error { e := m.ReadCloser.Close(); m.once.Do(m.finish); return e }
++func BenchmarkReadMetrics() map[string]any {
++	buckets := make([]int64, len(benchReads.buckets))
++	for i := range buckets {
++		buckets[i] = benchReads.buckets[i].Load()
++	}
++	return map[string]any{"enabled": os.Getenv("POLIGN_BENCH_TELEMETRY") == "1", "attempts": benchReads.attempts.Load(), "range_attempts": benchReads.ranges.Load(), "head_attempts": benchReads.heads.Load(), "list_attempts": benchReads.lists.Load(), "failures": benchReads.failures.Load(), "canceled_attempts": benchReads.canceled.Load(), "sdk_retry_attempts": benchReads.retries.Load(), "hedge_launches": benchReads.hedges.Load(), "blocked_mutations": benchReads.mutations.Load(), "bytes": benchReads.bytes.Load(), "inflight": benchReads.inflight.Load(), "total_ns": benchReads.totalNS.Load(), "latency_buckets": buckets, "bucket_upper_ms": []int{5, 10, 25, 50, 100, 250, 500, 1000, -1}}
++}
+diff --git a/internal/objectstore/benchmark_metrics_test.go b/internal/objectstore/benchmark_metrics_test.go
+new file mode 100644
+index 0000000..5d6bd15
+--- /dev/null
++++ b/internal/objectstore/benchmark_metrics_test.go
+@@ -0,0 +1,40 @@
++package objectstore
++
++import (
++	"io"
++	"net/http"
++	"strings"
++	"testing"
++)
++
++type testBenchHTTP struct{ calls int }
++
++func (c *testBenchHTTP) Do(*http.Request) (*http.Response, error) {
++	c.calls++
++	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("ok"))}, nil
++}
++func TestBenchmarkTelemetryAllowsCredentialsAndBlocksOnlyS3Writes(t *testing.T) {
++	c := &testBenchHTTP{}
++	m := measuredHTTP{c}
++	req, _ := http.NewRequest("PUT", "http://169.254.169.254/latest/api/token", nil)
++	resp, err := m.Do(req)
++	if err != nil || c.calls != 1 {
++		t.Fatal("blocked credential token", err)
++	}
++	resp.Body.Close()
++	req, _ = http.NewRequest("PUT", "https://bucket.s3.us-west-1.amazonaws.com/object", nil)
++	if _, err = m.Do(req); err == nil || c.calls != 1 {
++		t.Fatal("S3 mutation reached network")
++	}
++	before := benchReads.bytes.Load()
++	req, _ = http.NewRequest("GET", "https://bucket.s3.us-west-1.amazonaws.com/object", nil)
++	resp, err = m.Do(req)
++	if err != nil {
++		t.Fatal(err)
++	}
++	io.ReadAll(resp.Body)
++	resp.Body.Close()
++	if benchReads.bytes.Load()-before != 2 || benchReads.inflight.Load() != 0 {
++		t.Fatal("incorrect read counters")
++	}
++}

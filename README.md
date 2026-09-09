@@ -174,6 +174,10 @@ the index, then serve it from a small one indefinitely.
 | [`deploy/`](deploy/) | service files and a production runbook |
 | [`eval/`](eval/) | how to measure whether your search is any good |
 
+For the proposed read-only Wikipedia load tests, instance comparison, accuracy
+evaluation, and resource report, see the
+[benchmark plan](docs/WIKIPEDIA_READ_BENCHMARK_PLAN.md).
+
 ## Three things that will save you time
 
 **Use the same model for indexing and searching.** A vector only means something
