@@ -101,7 +101,9 @@ sudo chown -R polign:polign /var/lib/polign /opt/polign
 
 # polign-server comes from polign_db (brew install polign/tap/polign, or the
 # releases page at github.com/Polign/polign/releases). Take the linux arm64
-# build for this host. polign-demo is cross-compiled from this repo:
+# build for this host. A source build needs -tags cloud for S3 support:
+#   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags cloud -o polign-server ./cmd/server
+# Run that in the polign_db repository. polign-demo is cross-compiled from this repo:
 #   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o polign-demo ./cmd/demo
 sudo install -m 0755 polign-server polign-demo /opt/polign/bin/
 sudo install -m 0644 serve/embedserve.py /opt/polign/bin/
@@ -123,6 +125,13 @@ sudo systemctl restart caddy
 
 Point the DNS A record at the host — **DNS-only** (grey cloud on Cloudflare), or
 Caddy's HTTP-01 challenge cannot reach it.
+
+The node sends telemetry on startup and every ten minutes, including while
+idle. Its random install ID persists at `/var/lib/polign/telemetry-install-id`,
+inside the service's writable state directory. Use `-telemetry=false` to
+disable reporting; configuring encryption or confidential mode also disables
+it. Older index manifests without vector-count metadata report an unknown
+vector count until republished by an updated index producer.
 
 ### Memory budget
 
@@ -168,8 +177,10 @@ EOF
 
 ## Gotchas
 
-- **`-restore-stores ""` is load-bearing.** Drop it and the serving node tries
-  to rebuild every vector in RAM at boot, and dies on a small box.
+- **Keep `-read-only -cold-first`.** Cold-first serving avoids rebuilding every
+  vector in RAM at boot; read-only mode prevents writes and background index
+  changes. These replace the older `-restore-stores ""` / `-log-stores ""`
+  settings, which current servers no longer accept.
 - **Do not enable the hot tier here.** Promotion transiently materialises the
   full index, which is exactly what this host cannot afford.
 - **Query knobs are not public inputs.** `-public` fixes `nprobe` at the

@@ -29,13 +29,14 @@ Group=polign
 Environment=GOMEMLIMIT=1000MiB
 Environment=AWS_REGION=REPLACE_REGION
 ExecStart=/opt/polign/bin/polign-server \
+    -telemetry-id-file /var/lib/polign/telemetry-install-id \
     -store s3://REPLACE_BUCKET/polign \
-    -restore-stores "" \
+    -read-only \
+    -cold-first \
     -hot-max 0 \
     -persist=false \
     -maintain 0 \
     -tail-fresh=false \
-    -log-stores "" \
     -http 127.0.0.1:23000 \
     -grpc 127.0.0.1:23001 \
     -disk-cache-dir /var/lib/polign/disk-cache \

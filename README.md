@@ -110,7 +110,7 @@ What the flags mean:
 ```sh
 # The database server.
 polign-server -store fs:/tmp/polign-store \
-    -restore-stores "" -hot-max 0 -persist=false -maintain 0 \
+    -read-only -cold-first -hot-max 0 \
     -http 127.0.0.1:23000 &
 
 # The embedding model, so queries can be turned into vectors too.
@@ -123,12 +123,11 @@ go run ./cmd/demo -dir ./data -node http://127.0.0.1:23000 \
 
 Open http://localhost:24000 and search.
 
-Those flags on `polign-server` all switch things off. By default, `-store` gives
-you a full read and write database that loads the whole index into memory when it
-starts. This demo wants the opposite: a server that keeps almost nothing in
-memory and reads from storage for each query. See
-[deploy/polign-node.service](deploy/polign-node.service) for what each flag
-prevents.
+These flags keep the server read-only, serve from object-storage segments,
+and disable promotion into the in-memory hot tier. The demo reads from storage
+with bounded caches instead of loading the whole index into memory. See
+[deploy/polign-node.service](deploy/polign-node.service) for the deployed
+configuration.
 
 ## How it works
 
