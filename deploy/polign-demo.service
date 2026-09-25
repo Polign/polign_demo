@@ -4,10 +4,9 @@ Documentation=https://github.com/Polign/polign_demo
 After=network-online.target polign-node.service polign-embedserve.service
 Wants=network-online.target
 # BindsTo stops this app if the node goes away — it has nothing to serve without
-# one. PartOf is what brings it back: BindsTo propagates a *stop* but not a
-# restart, so upgrading the node binary took the site down and left it down
-# until someone noticed. With both, `systemctl restart polign-node` cycles
-# the app too.
+# one. PartOf propagates an explicit node restart to this app. The node also
+# Wants this unit so an automatic crash/OOM restart starts it again after
+# BindsTo has stopped it; PartOf alone does not restart an inactive app.
 BindsTo=polign-node.service
 PartOf=polign-node.service
 

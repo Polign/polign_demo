@@ -195,7 +195,14 @@ EOF
 - **`pkill -f <pattern>` over SSH kills your own session** when the pattern
   appears anywhere in the remote command line — including the real filename
   elsewhere in the same command. Put start/stop logic in a script on the host.
-- **The app stops with the node.** `polign-demo.service` is `BindsTo` *and*
-  `PartOf` the node unit, so restarting the node cycles the app with it. With
-  `BindsTo` alone, a node restart stops the app and leaves it stopped — which is
-  exactly how this demo once went dark after a routine binary upgrade.
+- **The app must return after a node crash.** The app uses `BindsTo` and
+  `PartOf` for stop/restart propagation, and the node uses
+  `Wants=polign-demo.service` to start an inactive app when the node recovers.
+  `BindsTo` plus `PartOf` alone left the app stopped after an OOM kill even
+  though the node automatically restarted.
+- **Budget for every service on the host.** The Wikipedia node uses a 512 MiB
+  Go memory target, a 640 MiB cgroup reclaim threshold, and a 768 MiB hard
+  cgroup limit. Go's target is not an RSS limit. These bounds leave room for
+  the Memory and Discovery services sharing the 2 GB demo host; an exceptional
+  allocation can still restart the Wikipedia node, but it will bring its app
+  back automatically.

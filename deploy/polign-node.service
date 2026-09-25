@@ -2,7 +2,9 @@
 Description=polign_db serving node (cold-first, read-only)
 Documentation=https://github.com/Polign/polign_demo
 After=network-online.target
-Wants=network-online.target
+# Pull the web app back in after an automatic crash/OOM restart as well as an
+# explicit restart. The app's BindsTo/PartOf alone does not start an inactive app.
+Wants=network-online.target polign-demo.service
 
 [Service]
 Type=simple
@@ -13,20 +15,19 @@ Group=polign
 # alone, -store expands into a full read-write deployment that rebuilds the
 # index in RAM at boot, which a 2 GB box cannot survive.
 #
-# The memory ceiling leaves room for the other two processes on this host:
-#
-#   node (this)      1000 MiB limit, ~420 MiB typical under queries
-#   embedserve        ~380 MiB resident
-#   demo app           ~30 MiB (it no longer loads any model of its own)
-#
-# on a 2 GB box. The disk cache is what keeps the node's RSS flat as the corpus
-# grows: cells land on local disk, not in the heap. The 256 MiB segment cache in
-# front of it absorbs the repeat reads that never reach disk at all.
+# The 2 GB host also runs the Memory and Discovery demos. GOMEMLIMIT is a soft
+# Go runtime target, not an RSS ceiling. Leave headroom for runtime overhead and
+# file pages, reclaim above MemoryHigh, and bound this unit with MemoryMax so a
+# spike cannot consume the whole host. Disk-cache pages are reclaimable; the
+# 256 MiB in-memory segment cache is included in the Go memory target.
 #
 # Put AWS_REGION in the same region as the bucket. A store in another region
 # still answers, it just pays a cross-region round trip on every cold cell, and
 # the cold path is the whole point of this deployment.
-Environment=GOMEMLIMIT=1000MiB
+Environment=GOMEMLIMIT=512MiB
+MemoryAccounting=yes
+MemoryHigh=640M
+MemoryMax=768M
 Environment=AWS_REGION=REPLACE_REGION
 ExecStart=/opt/polign/bin/polign-server-0.7.1 \
     -telemetry-id-file /var/lib/polign/telemetry-install-id \
