@@ -29,7 +29,7 @@ MemoryAccounting=yes
 MemoryHigh=640M
 MemoryMax=768M
 Environment=AWS_REGION=REPLACE_REGION
-ExecStart=/opt/polign/bin/polign-server-0.7.1 \
+ExecStart=/opt/polign/bin/polign-server-0.7.4 \
     -telemetry-id-file /var/lib/polign/telemetry-install-id \
     -store s3://REPLACE_BUCKET/polign \
     -read-only \
