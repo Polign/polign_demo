@@ -28,7 +28,7 @@ Group=polign
 # the cold path is the whole point of this deployment.
 Environment=GOMEMLIMIT=1000MiB
 Environment=AWS_REGION=REPLACE_REGION
-ExecStart=/opt/polign/bin/polign-server \
+ExecStart=/opt/polign/bin/polign-server-0.7.1 \
     -telemetry-id-file /var/lib/polign/telemetry-install-id \
     -store s3://REPLACE_BUCKET/polign \
     -read-only \
