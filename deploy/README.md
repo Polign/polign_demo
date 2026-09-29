@@ -101,12 +101,12 @@ sudo chown -R polign:polign /var/lib/polign /opt/polign
 
 # polign-server comes from polign_db (brew install polign/tap/polign, or the
 # releases page at github.com/Polign/polign/releases). Take the linux arm64
-# build from release v0.7.4 for this host. Verify its signed checksums before
+# build from release v0.8.1 for this host. Verify its signed checksums before
 # installation. A source build needs -tags cloud for S3 support:
 #   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags cloud -o polign-server ./cmd/server
 # Run that in the polign_db repository. polign-demo is cross-compiled from this repo:
 #   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o polign-demo ./cmd/demo
-sudo install -m 0755 polign-server /opt/polign/bin/polign-server-0.7.4
+sudo install -m 0755 polign-server /opt/polign/bin/polign-server-0.8.1
 sudo install -m 0755 polign-demo /opt/polign/bin/
 sudo install -m 0644 serve/embedserve.py /opt/polign/bin/
 sudo cp -r bge-small data/corpus.json data/examples.txt /opt/polign/data/
